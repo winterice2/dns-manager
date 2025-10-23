@@ -16,10 +16,29 @@ fn main() -> Result<(), eframe::Error> {
     )
 }
 
+#[derive(Clone)]
+struct DNSProvider {
+    name: String,
+    primary: String,
+    secondary: String,
+    description: String,
+}
+
+#[derive(Clone, Default)]
+struct SpeedTestResult {
+    provider: String,
+    primary_ping: Option<f64>,
+    secondary_ping: Option<f64>,
+    avg_ping: Option<f64>,
+}
+
 #[derive(Default)]
 struct DNSManager {
     status: String,
     current_dns: String,
+    speed_results: Vec<SpeedTestResult>,
+    custom_primary: String,
+    custom_secondary: String,
 }
 
 impl DNSManager {
@@ -56,6 +75,9 @@ impl DNSManager {
         Self {
             status: "🚀 Ready for space launch!".to_string(),
             current_dns: String::new(),
+            speed_results: Vec::new(),
+            custom_primary: String::new(),
+            custom_secondary: String::new(),
         }
     }
 
@@ -171,6 +193,116 @@ impl DNSManager {
         })
     }
 
+    fn get_dns_providers() -> Vec<DNSProvider> {
+        vec![
+            DNSProvider {
+                name: "Cloudflare".to_string(),
+                primary: "1.1.1.1".to_string(),
+                secondary: "1.0.0.1".to_string(),
+                description: "Быстрый и приватный DNS".to_string(),
+            },
+            DNSProvider {
+                name: "Google".to_string(),
+                primary: "8.8.8.8".to_string(),
+                secondary: "8.8.4.4".to_string(),
+                description: "Надежный DNS от Google".to_string(),
+            },
+            DNSProvider {
+                name: "Quad9".to_string(),
+                primary: "9.9.9.9".to_string(),
+                secondary: "149.112.112.112".to_string(),
+                description: "Безопасный DNS с блокировкой вредоносных сайтов".to_string(),
+            },
+            DNSProvider {
+                name: "OpenDNS".to_string(),
+                primary: "208.67.222.222".to_string(),
+                secondary: "208.67.220.220".to_string(),
+                description: "Семейный DNS с фильтрацией контента".to_string(),
+            },
+            DNSProvider {
+                name: "AdGuard".to_string(),
+                primary: "94.140.14.14".to_string(),
+                secondary: "94.140.15.15".to_string(),
+                description: "DNS с блокировкой рекламы".to_string(),
+            },
+            DNSProvider {
+                name: "CleanBrowsing".to_string(),
+                primary: "185.228.168.9".to_string(),
+                secondary: "185.228.169.9".to_string(),
+                description: "Семейный DNS без рекламы".to_string(),
+            },
+        ]
+    }
+
+    fn ping_dns_server(ip: &str) -> Option<f64> {
+        // Используем ping для измерения задержки
+        let output = Command::new("ping")
+            .arg("-n")
+            .arg("1")  // Один пакет
+            .arg("-w")
+            .arg("1000")  // Таймаут 1 секунда
+            .arg(ip)
+            .output();
+
+        match output {
+            Ok(result) if result.status.success() => {
+                let stdout = String::from_utf8_lossy(&result.stdout);
+                // Парсим результат ping (ищем "Average = Xms")
+                for line in stdout.lines() {
+                    if line.contains("Average =") {
+                        let parts: Vec<&str> = line.split('=').collect();
+                        if parts.len() >= 2 {
+                            let avg_part = parts[1].trim();
+                            let ms_part = avg_part.split("ms").next()?;
+                            return ms_part.trim().parse::<f64>().ok();
+                        }
+                    }
+                }
+                None
+            }
+            _ => None,
+        }
+    }
+
+    fn run_speed_test(&mut self) {
+        self.status = "🧪 Запуск тестирования скорости DNS...".to_string();
+        self.speed_results.clear();
+
+        let providers = Self::get_dns_providers();
+
+        for provider in providers {
+            let mut result = SpeedTestResult {
+                provider: provider.name.clone(),
+                primary_ping: Self::ping_dns_server(&provider.primary),
+                secondary_ping: Self::ping_dns_server(&provider.secondary),
+                avg_ping: None,
+            };
+
+            // Вычисляем среднее значение
+            let mut pings = Vec::new();
+            if let Some(p) = result.primary_ping { pings.push(p); }
+            if let Some(p) = result.secondary_ping { pings.push(p); }
+
+            if !pings.is_empty() {
+                result.avg_ping = Some(pings.iter().sum::<f64>() / pings.len() as f64);
+            }
+
+            self.speed_results.push(result);
+        }
+
+        // Сортируем по средней задержке
+        self.speed_results.sort_by(|a, b| {
+            match (a.avg_ping, b.avg_ping) {
+                (Some(a_ping), Some(b_ping)) => a_ping.partial_cmp(&b_ping).unwrap_or(std::cmp::Ordering::Equal),
+                (Some(_), None) => std::cmp::Ordering::Less,
+                (None, Some(_)) => std::cmp::Ordering::Greater,
+                (None, None) => std::cmp::Ordering::Equal,
+            }
+        });
+
+        self.status = "✅ Тестирование завершено! Результаты отсортированы по скорости.".to_string();
+    }
+
     fn set_dns(primary: &str, secondary: &str) -> Result<String, String> {
         // Получаем список активных сетевых адаптеров и устанавливаем DNS для всех
         let command = format!(
@@ -263,6 +395,58 @@ impl eframe::App for DNSManager {
                     }
                 }
 
+                ui.add_space(10.0);
+
+                // Дополнительные DNS провайдеры
+                ui.label("🌍 Extended DNS Universe:");
+
+                // Quad9
+                if ui.add_sized([button_width, button_height], egui::Button::new("🔒 Quad9 - Security Planet (9.9.9.9)")).clicked() {
+                    self.status = "🛸 Approaching Quad9 security zone: 9.9.9.9, 149.112.112.112...".to_string();
+                    ctx.request_repaint();
+
+                    match Self::set_dns("9.9.9.9", "149.112.112.112") {
+                        Ok(_) => self.status = "🎉 Secured with Quad9: 9.9.9.9, 149.112.112.112! Threats blocked!".to_string(),
+                        Err(e) => self.status = format!("💥 Security breach: {}", e),
+                    }
+                }
+
+                ui.add_space(8.0);
+
+                // OpenDNS
+                if ui.add_sized([button_width, button_height], egui::Button::new("👨‍👩‍👧‍👦 OpenDNS - Family Planet (208.67.222.222)")).clicked() {
+                    self.status = "🛸 Entering family-friendly zone: 208.67.222.222, 208.67.220.220...".to_string();
+                    ctx.request_repaint();
+
+                    match Self::set_dns("208.67.222.222", "208.67.220.220") {
+                        Ok(_) => self.status = "🎉 Family protection activated: 208.67.222.222, 208.67.220.220!".to_string(),
+                        Err(e) => self.status = format!("💥 Family shield failure: {}", e),
+                    }
+                }
+
+                ui.add_space(8.0);
+
+                // AdGuard
+                if ui.add_sized([button_width, button_height], egui::Button::new("🚫 AdGuard - Clean Planet (94.140.14.14)")).clicked() {
+                    self.status = "🛸 Entering ad-free zone: 94.140.14.14, 94.140.15.15...".to_string();
+                    ctx.request_repaint();
+
+                    match Self::set_dns("94.140.14.14", "94.140.15.15") {
+                        Ok(_) => self.status = "🎉 Ads blocked: 94.140.14.14, 94.140.15.15! Clean browsing!".to_string(),
+                        Err(e) => self.status = format!("💥 Ad blocking failure: {}", e),
+                    }
+                }
+
+                ui.add_space(15.0);
+                ui.label("🧪 Laboratory:");
+
+                // DNS Speed Test
+                if ui.add_sized([button_width, button_height], egui::Button::new("⚡ DNS Speed Test")).clicked() {
+                    let ctx_clone = ctx.clone();
+                    self.run_speed_test();
+                    ctx_clone.request_repaint();
+                }
+
                 ui.add_space(15.0);
                 ui.label("🌠 Space telemetry:");
 
@@ -325,6 +509,48 @@ impl eframe::App for DNSManager {
                         ui.close_menu();
                     }
                 });
+
+                // Speed Test Results
+                if !self.speed_results.is_empty() {
+                    ui.add_space(20.0);
+                    ui.label("📊 Speed Test Results (sorted by speed):");
+
+                    ui.separator();
+
+                    for (index, result) in self.speed_results.iter().enumerate() {
+                        let medal = match index {
+                            0 => "🥇",
+                            1 => "🥈",
+                            2 => "🥉",
+                            _ => "📍",
+                        };
+
+                        let avg_text = match result.avg_ping {
+                            Some(avg) => format!("{:.1}ms", avg),
+                            None => "N/A".to_string(),
+                        };
+
+                        let primary_text = match result.primary_ping {
+                            Some(p) => format!("{:.1}ms", p),
+                            None => "❌".to_string(),
+                        };
+
+                        let secondary_text = match result.secondary_ping {
+                            Some(p) => format!("{:.1}ms", p),
+                            None => "❌".to_string(),
+                        };
+
+                        ui.horizontal(|ui| {
+                            ui.label(format!("{} {}:", medal, result.provider));
+                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                ui.label(format!("Avg: {} | P1: {} | P2: {}", avg_text, primary_text, secondary_text));
+                            });
+                        });
+                    }
+
+                    ui.add_space(5.0);
+                    ui.small("💡 Чем меньше задержка - тем быстрее DNS!");
+                }
             });
         });
     }

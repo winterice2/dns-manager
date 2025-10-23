@@ -1,117 +1,117 @@
 name: Rust CI/CD
 
 on:
-  push:
-    branches: [ master, develop ]
-  pull_request:
-    branches: [ master, develop ]
-  release:
-    types: [published]
+    push:
+        branches: [master, develop]
+    pull_request:
+        branches: [master, develop]
+    release:
+        types: [published]
 
 jobs:
-  build-windows:
-    name: Build for Windows
-    runs-on: windows-latest
+    build-windows:
+        name: Build for Windows
+        runs-on: windows-latest
 
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+        steps:
+            - name: Checkout code
+              uses: actions/checkout@v4
 
-    - name: Setup Rust toolchain
-      uses: dtolnay/rust-toolchain@stable
-      with:
-        targets: x86_64-pc-windows-gnu
+            - name: Setup Rust toolchain
+              uses: dtolnay/rust-toolchain@stable
+              with:
+                  targets: x86_64-pc-windows-gnu
 
-    - name: Cache dependencies
-      uses: Swatinem/rust-cache@v2
+            - name: Cache dependencies
+              uses: Swatinem/rust-cache@v2
 
-    - name: Install MinGW (for linking)
-      run: |
-        choco install mingw -y --force
-        echo "C:\ProgramData\chocolatey\lib\mingw\tools\install\mingw64\bin" >> $env:GITHUB_PATH
+            - name: Install MinGW (for linking)
+              run: |
+                  choco install mingw -y --force
+                  echo "C:\ProgramData\chocolatey\lib\mingw\tools\install\mingw64\bin" >> $env:GITHUB_PATH
 
-    - name: Build in debug mode
-      run: cargo build
+            - name: Build in debug mode
+              run: cargo build
 
-    - name: Build in release mode
-      run: cargo build --release
+            - name: Build in release mode
+              run: cargo build --release
 
-    - name: Test
-      run: cargo test
+            - name: Test
+              run: cargo test
 
-    - name: Create portable version
-      run: .\create-portable.ps1
-      shell: pwsh
+            - name: Create portable version
+              run: .\create-portable.ps1
+              shell: pwsh
 
-    - name: Upload build artifacts
-      uses: actions/upload-artifact@v4
-      with:
-        name: dns-manager-windows
-        path: |
-          target/release/dns-manager.exe
-          DNS-Manager-Portable.zip
-        if-no-files-found: error
+            - name: Upload build artifacts
+              uses: actions/upload-artifact@v4
+              with:
+                  name: dns-manager-windows
+                  path: |
+                      target/release/dns-manager.exe
+                      DNS-Manager-Portable.zip
+                  if-no-files-found: error
 
-    - name: Upload to release (only on release published)
-      if: github.event_name == 'release'
-      uses: softprops/action-gh-release@v2
-      with:
-        files: |
-          target/release/dns-manager.exe
-          DNS-Manager-Portable.zip
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+            - name: Upload to release (only on release published)
+              if: github.event_name == 'release'
+              uses: softprops/action-gh-release@v2
+              with:
+                  files: |
+                      target/release/dns-manager.exe
+                      DNS-Manager-Portable.zip
+              env:
+                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  build-linux:
-    name: Build for Linux
-    runs-on: ubuntu-latest
-    if: github.event_name == 'release'
+    build-linux:
+        name: Build for Linux
+        runs-on: ubuntu-latest
+        if: github.event_name == 'release'
 
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+        steps:
+            - name: Checkout code
+              uses: actions/checkout@v4
 
-    - name: Setup Rust toolchain
-      uses: dtolnay/rust-toolchain@stable
-      with:
-        targets: x86_64-unknown-linux-gnu
+            - name: Setup Rust toolchain
+              uses: dtolnay/rust-toolchain@stable
+              with:
+                  targets: x86_64-unknown-linux-gnu
 
-    - name: Cache dependencies
-      uses: Swatinem/rust-cache@v2
+            - name: Cache dependencies
+              uses: Swatinem/rust-cache@v2
 
-    - name: Build in release mode
-      run: cargo build --release --target x86_64-unknown-linux-gnu
+            - name: Build in release mode
+              run: cargo build --release --target x86_64-unknown-linux-gnu
 
-    - name: Upload Linux build
-      uses: softprops/action-gh-release@v2
-      with:
-        files: target/x86_64-unknown-linux-gnu/release/dns-manager
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+            - name: Upload Linux build
+              uses: softprops/action-gh-release@v2
+              with:
+                  files: target/x86_64-unknown-linux-gnu/release/dns-manager
+              env:
+                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  build-macos:
-    name: Build for macOS
-    runs-on: macos-latest
-    if: github.event_name == 'release'
+    build-macos:
+        name: Build for macOS
+        runs-on: macos-latest
+        if: github.event_name == 'release'
 
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+        steps:
+            - name: Checkout code
+              uses: actions/checkout@v4
 
-    - name: Setup Rust toolchain
-      uses: dtolnay/rust-toolchain@stable
-      with:
-        targets: x86_64-apple-darwin
+            - name: Setup Rust toolchain
+              uses: dtolnay/rust-toolchain@stable
+              with:
+                  targets: x86_64-apple-darwin
 
-    - name: Cache dependencies
-      uses: Swatinem/rust-cache@v2
+            - name: Cache dependencies
+              uses: Swatinem/rust-cache@v2
 
-    - name: Build in release mode
-      run: cargo build --release --target x86_64-apple-darwin
+            - name: Build in release mode
+              run: cargo build --release --target x86_64-apple-darwin
 
-    - name: Upload macOS build
-      uses: softprops/action-gh-release@v2
-      with:
-        files: target/x86_64-apple-darwin/release/dns-manager
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+            - name: Upload macOS build
+              uses: softprops/action-gh-release@v2
+              with:
+                  files: target/x86_64-apple-darwin/release/dns-manager
+              env:
+                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
