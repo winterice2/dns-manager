@@ -1,0 +1,11 @@
+[package]
+name = "dns-manager"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# Используем более простые зависимости совместимые с MSVC
+eframe = "0.25"
+egui = "0.25"
+winapi = { version = "0.3", features = ["windef", "winuser"] }
+tokio = { version = "1.0", features = ["process", "rt-multi-thread"] }
