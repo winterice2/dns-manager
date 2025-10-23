@@ -32,6 +32,15 @@ struct SpeedTestResult {
     avg_ping: Option<f64>,
 }
 
+#[derive(Clone, Default)]
+struct NetworkAdapter {
+    name: String,
+    status: String,
+    mac_address: String,
+    ip_addresses: Vec<String>,
+    dns_servers: Vec<String>,
+}
+
 #[derive(Default)]
 struct DNSManager {
     status: String,
@@ -41,6 +50,7 @@ struct DNSManager {
     custom_secondary: String,
     selected_tab: usize,
     is_speed_testing: bool,
+    network_adapters: Vec<NetworkAdapter>,
 }
 
 impl DNSManager {
@@ -74,6 +84,9 @@ impl DNSManager {
 
         cc.egui_ctx.set_style(style);
 
+        // Получаем информацию о сетевых адаптерах при запуске
+        let network_adapters = Self::get_network_adapters();
+
         Self {
             status: "🚀 Ready for space launch!".to_string(),
             current_dns: String::new(),
@@ -82,6 +95,7 @@ impl DNSManager {
             custom_secondary: String::new(),
             selected_tab: 0,
             is_speed_testing: false,
+            network_adapters,
         }
     }
 
@@ -241,6 +255,77 @@ impl DNSManager {
         ]
     }
 
+    fn get_network_adapters() -> Vec<NetworkAdapter> {
+        let command = r#"Get-NetAdapter | Where-Object { $_.Status -eq 'Up' } | ForEach-Object {
+    $adapter = $_
+    $ip_info = Get-NetIPAddress -InterfaceAlias $adapter.Name -AddressFamily IPv4 | Select-Object -First 1
+    $dns_info = Get-DnsClientServerAddress -InterfaceAlias $adapter.Name -AddressFamily IPv4
+
+    [PSCustomObject]@{
+        Name = $adapter.Name
+        Status = $adapter.Status.ToString()
+        MacAddress = $adapter.MacAddress
+        IPAddress = if ($ip_info) { $ip_info.IPAddress } else { "N/A" }
+        DNSServers = if ($dns_info.ServerAddresses) { $dns_info.ServerAddresses -join ", " } else { "N/A" }
+    }
+} | ConvertTo-Json"#;
+
+        match Self::run_powershell_command(command) {
+            Ok(json_result) => {
+                // Парсим JSON результат
+                match serde_json::from_str::<Vec<serde_json::Value>>(&json_result) {
+                    Ok(adapters_json) => {
+                        let mut adapters = Vec::new();
+                        for adapter_json in adapters_json {
+                            if let (Some(name), Some(status), Some(mac), Some(ip), Some(dns)) = (
+                                adapter_json.get("Name").and_then(|v| v.as_str()),
+                                adapter_json.get("Status").and_then(|v| v.as_str()),
+                                adapter_json.get("MacAddress").and_then(|v| v.as_str()),
+                                adapter_json.get("IPAddress").and_then(|v| v.as_str()),
+                                adapter_json.get("DNSServers").and_then(|v| v.as_str()),
+                            ) {
+                                let ip_addresses = if ip != "N/A" {
+                                    vec![ip.to_string()]
+                                } else {
+                                    vec!["Не назначен".to_string()]
+                                };
+
+                                let dns_servers = if dns != "N/A" {
+                                    dns.split(", ").map(|s| s.to_string()).collect()
+                                } else {
+                                    vec!["Не настроен".to_string()]
+                                };
+
+                                adapters.push(NetworkAdapter {
+                                    name: name.to_string(),
+                                    status: status.to_string(),
+                                    mac_address: mac.to_string(),
+                                    ip_addresses,
+                                    dns_servers,
+                                });
+                            }
+                        }
+                        adapters
+                    }
+                    Err(_) => vec![NetworkAdapter {
+                        name: "Ошибка получения данных".to_string(),
+                        status: "N/A".to_string(),
+                        mac_address: "N/A".to_string(),
+                        ip_addresses: vec!["N/A".to_string()],
+                        dns_servers: vec!["N/A".to_string()],
+                    }],
+                }
+            }
+            Err(_) => vec![NetworkAdapter {
+                name: "Ошибка выполнения команды".to_string(),
+                status: "N/A".to_string(),
+                mac_address: "N/A".to_string(),
+                ip_addresses: vec!["N/A".to_string()],
+                dns_servers: vec!["N/A".to_string()],
+            }],
+        }
+    }
+
     fn ping_dns_server(ip: &str) -> Option<f64> {
         // Используем PowerShell для измерения задержки через Test-Connection
         let command = format!("Test-Connection -ComputerName {} -Count 1 | Select-Object -ExpandProperty ResponseTime", ip);
@@ -251,7 +336,7 @@ impl DNSManager {
                 if let Ok(ms) = result.trim().parse::<f64>() {
                     println!("PowerShell ping to {}: {:.1}ms", ip, ms);
                     Some(ms)
-                } else {
+        } else {
                     println!("Failed to parse PowerShell ping result for {}: {}", ip, result);
                     None
                 }
@@ -504,7 +589,7 @@ impl DNSManager {
         ui.separator();
 
         ui.label("⭐ Популярные провайдеры:");
-        ui.add_space(10.0);
+                ui.add_space(10.0);
 
         // Cloudflare
         if ui.add_sized([ui.available_width(), 35.0], egui::Button::new("☁️ Cloudflare - Быстрый и приватный (1.1.1.1)")).clicked() {
@@ -667,7 +752,7 @@ impl DNSManager {
         ui.horizontal(|ui| {
             ui.label("🎯 Версия:");
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                ui.label("v1.1.0 - Расширенная Вселенная");
+                ui.label("v1.2.1 - Мониторинг Сети");
             });
         });
 
@@ -695,6 +780,50 @@ impl DNSManager {
         ui.label("👨‍👩‍👧‍👦 **OpenDNS (208.67.222.222)**: Семейная фильтрация контента");
         ui.label("🚫 **AdGuard (94.140.14.14)**: Блокировка рекламы");
         ui.label("🧹 **CleanBrowsing (185.228.168.9)**: Безопасный интернет для детей");
+
+        ui.add_space(20.0);
+        ui.label("📡 Информация о сети:");
+        ui.add_space(10.0);
+
+        if ui.button("🔄 Обновить информацию о сети").clicked() {
+            self.network_adapters = Self::get_network_adapters();
+            self.status = "✅ Информация о сети обновлена!".to_string();
+                }
+
+                ui.add_space(10.0);
+
+        if self.network_adapters.is_empty() {
+            ui.label("❌ Нет активных сетевых адаптеров");
+                } else {
+            for adapter in &self.network_adapters {
+                ui.add_space(5.0);
+                ui.label(format!("🔌 **{}** ({})", adapter.name, adapter.status));
+
+                ui.horizontal(|ui| {
+                    ui.label("📍 MAC адрес:");
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        ui.label(&adapter.mac_address);
+                    });
+                });
+
+                ui.horizontal(|ui| {
+                    ui.label("🌐 IP адрес:");
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        ui.label(adapter.ip_addresses.join(", "));
+                    });
+                });
+
+                ui.horizontal(|ui| {
+                    ui.label("🔧 DNS серверы:");
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        ui.label(adapter.dns_servers.join(", "));
+            });
+        });
+
+                ui.add_space(5.0);
+                ui.separator();
+            }
+        }
 
         ui.add_space(20.0);
         ui.label("🔗 Полезные ссылки:");
