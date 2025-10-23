@@ -1,0 +1,110 @@
+---
+alwaysApply: true
+description: Character encoding handling for Windows/PowerShell integration
+---
+
+# 🔧 Character Encoding - Windows/PowerShell Critical Issue
+
+## 🚨 THE PROBLEM: "Ромбики с вопросами" (Diamond Question Marks)
+
+Windows PowerShell uses **CP866 (DOS Russian)** encoding, but Rust outputs **UTF-8**.
+This causes corrupted text display in console logs.
+
+### Symptoms:
+
+```
+❌ BAD: ����� ����⠬� � 1.1.1.1 �� � 32 ���⠬� ������:
+❌ BAD: �⢥� �� 1.1.1.1: �᫮ ����=32 �६�=19�� TTL=59
+```
+
+### Root Cause:
+
+- PowerShell console: CP866 encoding
+- Rust `println!`: UTF-8 encoding
+- No automatic conversion
+
+## ✅ THE SOLUTION: encoding_rs + Custom Print Function
+
+### 1. Add dependency:
+
+```toml
+[dependencies]
+encoding_rs = "0.8"
+```
+
+### 2. Create encoding-aware print function:
+
+```rust
+use encoding_rs;
+use std::io::{self, Write};
+
+fn println_cp866(message: &str) {
+    // Convert UTF-8 to Windows-1251 (compatible with CP866 for Russian)
+    let (cow, _encoding, _had_errors) = encoding_rs::WINDOWS_1251.encode(message);
+    let bytes = cow.as_ref();
+
+    // Direct write to stdout with correct encoding
+    let _ = io::stdout().write_all(bytes);
+    let _ = io::stdout().write_all(b"\r\n");
+}
+```
+
+### 3. Replace ALL println! with println_cp866:
+
+```rust
+// ❌ BAD - causes encoding corruption
+println!("Test-Connection failed for {}", ip);
+
+// ✅ GOOD - proper encoding
+println_cp866(&format!("Test-Connection failed for {}", ip));
+```
+
+## 📋 IMPLEMENTATION RULES
+
+### 1. Console Output Standards
+
+- **ALWAYS** use `println_cp866()` instead of `println!()`
+- **NEVER** mix UTF-8 and CP866 in same output
+- **TEST** on Russian Windows systems
+
+### 2. Error Message Encoding
+
+```rust
+// ✅ GOOD - properly encoded errors
+println_cp866(&format!("ping.exe ping to {} failed: {}", ip, e));
+
+// ✅ GOOD - debug info encoded
+println_cp866(&format!("Raw ping output: {:?}", raw_output));
+```
+
+### 3. String Formatting
+
+```rust
+// ✅ GOOD - format then encode
+let msg = format!("Provider {}: {}ms", name, ping_time);
+println_cp866(&msg);
+```
+
+## 🚨 CRITICAL REMINDERS
+
+- **ALL** console output must be CP866 encoded
+- **TEST** on Russian locale Windows systems
+- **NEVER** use `println!` for user-visible messages
+- **ALWAYS** encode error messages and debug info
+- **CHECK** encoding when adding new logging
+
+## 🔍 DETECTION PATTERNS
+
+Watch for these anti-patterns:
+
+- `println!(.*)` in network/command code
+- Raw string output to console
+- Missing encoding in error handling
+- Debug prints with special characters
+
+## 🧪 TESTING REQUIREMENTS
+
+- Test on Russian Windows locale
+- Verify no diamond question marks
+- Check special characters display correctly
+- Validate error message readability

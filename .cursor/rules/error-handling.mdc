@@ -1,0 +1,283 @@
+---
+alwaysApply: true
+description: Comprehensive error handling and logging patterns
+---
+
+# 🚨 Error Handling - Robust Failure Management
+
+## 🎯 THE PROBLEM: Silent Failures and Poor Error Messages
+
+Many operations fail silently or show cryptic error messages that don't help debugging.
+
+### Common Issues:
+- Operations return `None` or empty strings
+- No context about what failed
+- Users see technical error codes
+- No graceful degradation
+- Difficult debugging in production
+
+## ✅ SOLUTION: Comprehensive Error Handling Strategy
+
+### 1. Typed Error Results
+```rust
+// ✅ GOOD - explicit error types
+pub fn ping_dns_server(ip: &str) -> Option<f64> {
+    // Clear return type - success or none
+}
+
+pub fn get_current_dns() -> Result<String, String> {
+    // Detailed error messages
+}
+
+pub fn set_dns(primary: &str, secondary: &str) -> Result<String, String> {
+    // Operation results with context
+}
+```
+
+### 2. Contextual Error Messages
+```rust
+// ✅ GOOD - descriptive errors
+match run_powershell_command(&command) {
+    Ok(result) => {
+        println_cp866(&format!("DNS query successful: {}", result));
+        Ok(result)
+    }
+    Err(e) => {
+        let error_msg = format!("PowerShell DNS query failed for '{}': {}", target, e);
+        println_cp866(&error_msg);
+        Err(error_msg)
+    }
+}
+```
+
+### 3. Multi-Level Error Recovery
+```rust
+pub fn ping_dns_server(ip: &str) -> Option<f64> {
+    // Level 1: Primary method (PowerShell)
+    match try_powershell_ping(ip) {
+        Some(result) => return Some(result),
+        None => println_cp866(&format!("PowerShell ping failed for {}, trying fallback", ip)),
+    }
+
+    // Level 2: Fallback method (ping.exe)
+    match try_ping_exe(ip) {
+        Some(result) => return Some(result),
+        None => println_cp866(&format!("ping.exe failed for {}, no more fallbacks", ip)),
+    }
+
+    // Level 3: Return None (graceful failure)
+    None
+}
+```
+
+### 4. Operation Logging
+```rust
+// ✅ GOOD - comprehensive logging
+println_cp866(&format!("Starting DNS speed test for {} providers", providers.len()));
+
+for (i, provider) in providers.iter().enumerate() {
+    println_cp866(&format!("Testing {} ({}/{})", provider.name, i + 1, providers.len()));
+
+    match ping_provider(provider) {
+        Some(ping) => println_cp866(&format!("✓ {}: {:.1}ms", provider.name, ping)),
+        None => println_cp866(&format!("✗ {}: failed", provider.name)),
+    }
+}
+
+println_cp866(&format!("DNS speed test completed, {} successful", success_count));
+```
+
+## 📋 ERROR HANDLING PATTERNS
+
+### 1. Command Execution Errors
+```rust
+fn run_command_with_logging(command: &str, description: &str) -> Result<String, String> {
+    println_cp866(&format!("Executing: {}", description));
+
+    match run_powershell_command(command) {
+        Ok(result) => {
+            println_cp866(&format!("✓ {} successful", description));
+            Ok(result)
+        }
+        Err(e) => {
+            let error_msg = format!("✗ {} failed: {}", description, e);
+            println_cp866(&error_msg);
+            Err(error_msg)
+        }
+    }
+}
+```
+
+### 2. Network Operation Errors
+```rust
+fn handle_network_error(operation: &str, ip: &str, error: &str) {
+    let context = match error {
+        e if e.contains("timeout") => "network timeout",
+        e if e.contains("unreachable") => "host unreachable",
+        e if e.contains("refused") => "connection refused",
+        _ => "unknown network error"
+    };
+
+    println_cp866(&format!("Network error in {} for {}: {} ({})",
+                          operation, ip, error, context));
+}
+```
+
+### 3. Parsing Errors
+```rust
+fn safe_parse_number(input: &str, field: &str) -> Option<f64> {
+    match input.trim().parse::<f64>() {
+        Ok(value) => {
+            if value >= 0.0 {
+                Some(value)
+            } else {
+                println_cp866(&format!("Invalid {} value: {} (negative)", field, value));
+                None
+            }
+        }
+        Err(e) => {
+            println_cp866(&format!("Failed to parse {} '{}': {}", field, input, e));
+            None
+        }
+    }
+}
+```
+
+### 4. UI Error Display
+```rust
+fn show_error_in_ui(ui: &mut Ui, error: &str) {
+    ui.colored_label(Color32::RED, "❌ Error:");
+    ui.label(error);
+    ui.separator();
+
+    // Provide recovery suggestions
+    if error.contains("network") {
+        ui.label("💡 Check your internet connection");
+    } else if error.contains("permission") {
+        ui.label("💡 Run application as administrator");
+    }
+}
+```
+
+## 🚨 CRITICAL ERROR SCENARIOS
+
+### 1. PowerShell Command Failures
+- **Cause**: Missing privileges, wrong syntax, timeouts
+- **Handling**: Fallback to CMD, clear error messages
+- **Recovery**: Try alternative commands
+
+### 2. Network Connectivity Issues
+- **Cause**: DNS server down, firewall blocks, routing problems
+- **Handling**: Timeout handling, multiple attempts
+- **Recovery**: Try different servers, show offline status
+
+### 3. Encoding/Character Set Issues
+- **Cause**: UTF-8 vs CP866 mismatch in Windows
+- **Handling**: encoding_rs conversion, CP866-aware logging
+- **Recovery**: Graceful degradation, alternative output methods
+
+### 4. File System Access Issues
+- **Cause**: Permission denied, file locked, disk full
+- **Handling**: Check permissions, retry with delay
+- **Recovery**: Alternative storage locations, user notification
+
+## 🔍 DEBUGGING METHODOLOGY
+
+### 1. Error Context Logging
+```rust
+fn log_error_context(operation: &str, params: &[(&str, &str)], error: &str) {
+    println_cp866(&format!("Error in {}:", operation));
+
+    for (key, value) in params {
+        println_cp866(&format!("  {}: {}", key, value));
+    }
+
+    println_cp866(&format!("  Error: {}", error));
+}
+```
+
+### 2. State Dumping
+```rust
+fn dump_debug_state(app: &DNSManager) {
+    println_cp866(&format!("Debug state:"));
+    println_cp866(&format!("  Testing: {}", app.is_speed_testing));
+    println_cp866(&format!("  Providers: {}", app.speed_results.len()));
+    println_cp866(&format!("  Status: {}", app.status));
+    println_cp866(&format!("  Selected tab: {}", app.selected_tab));
+}
+```
+
+### 3. Progressive Debugging
+```rust
+// Level 1: Basic operation check
+println_cp866("Starting operation...");
+
+// Level 2: Parameter validation
+println_cp866(&format!("Parameters: ip={}, timeout={}", ip, timeout));
+
+// Level 3: Raw command output
+println_cp866(&format!("Raw output: {:?}", raw_result));
+
+// Level 4: Parsed results
+println_cp866(&format!("Parsed result: {:?}", parsed));
+```
+
+## 🧪 ERROR TESTING REQUIREMENTS
+
+### Unit Tests:
+```rust
+#[test]
+fn test_error_handling() {
+    // Test command failure
+    assert!(run_powershell_command("invalid_command").is_err());
+
+    // Test network timeout
+    assert_eq!(ping_dns_server("192.0.2.1"), None); // RFC 5737 test address
+
+    // Test invalid input
+    assert!(parse_ip_address("invalid.ip.address").is_err());
+}
+```
+
+### Integration Tests:
+- [ ] Network failure scenarios
+- [ ] Permission denied situations
+- [ ] Invalid input handling
+- [ ] Timeout behavior
+- [ ] Encoding edge cases
+
+### UI Error Testing:
+- [ ] Error message display
+- [ ] Recovery suggestions
+- [ ] User-friendly language
+- [ ] No crashes on errors
+
+## 📊 ERROR MONITORING
+
+### Error Classification:
+- **Critical**: App crashes, data loss
+- **Major**: Feature completely broken
+- **Minor**: Partial degradation
+- **Cosmetic**: UI/UX issues
+
+### Error Reporting:
+```rust
+fn report_error(level: ErrorLevel, operation: &str, error: &str, context: &str) {
+    let emoji = match level {
+        ErrorLevel::Critical => "🚨",
+        ErrorLevel::Major => "❌",
+        ErrorLevel::Minor => "⚠️",
+        ErrorLevel::Cosmetic => "ℹ️",
+    };
+
+    println_cp866(&format!("{} {} - {} ({})", emoji, operation, error, context));
+}
+```
+
+## 🎯 SUCCESS METRICS
+
+- [ ] All operations have clear success/failure logging
+- [ ] Users see helpful error messages, not technical codes
+- [ ] App continues functioning after individual failures
+- [ ] Debug logs provide sufficient context for troubleshooting
+- [ ] Error recovery works automatically where possible

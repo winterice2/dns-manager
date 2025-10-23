@@ -1,0 +1,318 @@
+---
+alwaysApply: false
+description: CI/CD pipeline setup and cross-platform build configuration
+globs: .github/workflows/*.yml,.github/workflows/*.yaml
+---
+
+# 🔄 CI/CD Setup - Cross-Platform Build Automation
+
+## 🚨 THE PROBLEM: Inconsistent Build Environments
+
+Different CI platforms have different toolchains, package managers, and configurations.
+
+### Chocolatey Issues:
+
+- Inconsistent package versions
+- Requires administrative privileges
+- Slow installation
+- Path conflicts
+
+### MinGW Installation Problems:
+
+- Wrong PATH configuration
+- Missing dlltool.exe
+- Incompatible versions
+- Build failures
+
+## ✅ SOLUTION: Scoop-Based CI Pipeline
+
+### GitHub Actions Windows Configuration:
+
+```yaml
+- name: Install MinGW via scoop
+  run: |
+    Set-ExecutionPolicy RemoteSigned -Scope CurrentUser -Force
+    iwr -useb get.scoop.sh | iex
+    scoop install git
+    scoop install mingw
+    echo "C:\Users\runneradmin\scoop\apps\mingw\current\bin" | Out-File -FilePath $env:GITHUB_PATH -Append
+
+- name: Verify MinGW installation
+  run: |
+    Get-Command dlltool
+    dlltool --version
+```
+
+### Complete Windows CI Job:
+
+```yaml
+build-windows:
+  name: Build for Windows
+  runs-on: windows-latest
+
+  steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Rust toolchain
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        targets: x86_64-pc-windows-gnu
+
+    - name: Cache dependencies
+      uses: Swatinem/rust-cache@v2
+
+    - name: Install MinGW via scoop
+      run: |
+        Set-ExecutionPolicy RemoteSigned -Scope CurrentUser -Force
+        iwr -useb get.scoop.sh | iex
+        scoop install git
+        scoop install mingw
+        echo "C:\Users\runneradmin\scoop\apps\mingw\current\bin" | Out-File -FilePath $env:GITHUB_PATH -Append
+
+    - name: Verify MinGW installation
+      run: |
+        Get-Command dlltool
+        dlltool --version
+
+    - name: Build in debug mode
+      run: cargo build
+
+    - name: Build in release mode
+      run: cargo build --release
+
+    - name: Test
+      run: cargo test
+
+    - name: Create portable version
+      run: .\create-portable.ps1
+      shell: pwsh
+
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: dns-manager-windows
+        path: |
+          target/release/dns-manager.exe
+          DNS-Manager-Portable.zip
+        if-no-files-found: error
+```
+
+## 📋 CI/CD BEST PRACTICES
+
+### 1. Platform-Specific Setup
+
+```yaml
+# Windows - use scoop for MinGW
+- name: Windows MinGW setup
+  run: |
+    scoop install mingw
+    # Verify installation
+
+# Linux - use system packages
+- name: Linux dependencies
+  run: |
+    sudo apt-get update
+    sudo apt-get install -y build-essential
+    # No special MinGW needed
+
+# macOS - use system tools
+- name: macOS setup
+  run: |
+    # Usually works out of the box
+```
+
+### 2. Dependency Caching
+
+```yaml
+- name: Cache dependencies
+  uses: Swatinem/rust-cache@v2
+  # Critical for fast builds
+```
+
+### 3. Artifact Management
+
+```yaml
+- name: Upload build artifacts
+  uses: actions/upload-artifact@v4
+  with:
+    name: dns-manager-${{ matrix.platform }}
+    path: |
+      target/release/dns-manager
+      DNS-Manager-Portable.zip
+    if-no-files-found: error
+```
+
+### 4. Release Automation
+
+```yaml
+- name: Upload to release
+  if: github.event_name == 'release'
+  uses: softprops/action-gh-release@v2
+  with:
+    files: |
+      target/release/dns-manager
+      DNS-Manager-Portable.zip
+```
+
+## 🚨 CRITICAL CI/CD PITFALLS TO AVOID
+
+### 1. Chocolatey for MinGW (BROKEN)
+
+```yaml
+# ❌ BAD - causes path issues
+- run: choco install mingw -y --force
+- run: refreshenv # Unreliable
+```
+
+### 2. Missing Path Verification
+
+```yaml
+# ❌ BAD - no verification
+- run: scoop install mingw
+
+# ✅ GOOD - verify installation
+- run: |
+    scoop install mingw
+    Get-Command dlltool
+    dlltool --version
+```
+
+### 3. No Error Handling
+
+```yaml
+# ❌ BAD - silent failures
+- run: cargo build
+
+# ✅ GOOD - fail fast
+- run: cargo build
+  # GitHub Actions fails on non-zero exit codes
+```
+
+### 4. Missing Platform-Specific Logic
+
+```yaml
+# ❌ BAD - same for all platforms
+- run: choco install mingw # Only works on Windows
+
+# ✅ GOOD - platform-specific
+- run: scoop install mingw # Windows
+- run: sudo apt-get install build-essential # Linux
+- run: echo "macOS works" # macOS
+```
+
+## 🔧 TROUBLESHOOTING CI ISSUES
+
+### MinGW Path Problems:
+
+```bash
+# Check current PATH
+echo $PATH
+
+# Verify dlltool location
+find /c -name "dlltool.exe" 2>/dev/null
+
+# Manual PATH setup
+export PATH="/c/Users/runneradmin/scoop/apps/mingw/current/bin:$PATH"
+```
+
+### Build Cache Issues:
+
+```bash
+# Clear cache if corrupted
+cargo clean
+rm -rf ~/.cargo/registry/cache
+rm -rf ~/.cargo/git/db
+```
+
+### Permission Issues:
+
+```bash
+# Windows - run as administrator
+# Linux/macOS - check file permissions
+ls -la target/
+chmod +x target/release/dns-manager
+```
+
+## 📊 CI PERFORMANCE OPTIMIZATION
+
+### Parallel Jobs:
+
+```yaml
+# Run platforms in parallel
+jobs:
+  build-windows:
+    runs-on: windows-latest
+  build-linux:
+    runs-on: ubuntu-latest
+  build-macos:
+    runs-on: macos-latest
+```
+
+### Conditional Builds:
+
+```yaml
+# Only build on relevant changes
+on:
+  push:
+    branches: [master, develop]
+    paths:
+      - 'src/**'
+      - 'Cargo.toml'
+      - '.github/workflows/**'
+```
+
+### Artifact Retention:
+
+```yaml
+# Keep artifacts for debugging
+- name: Upload build artifacts
+  uses: actions/upload-artifact@v4
+  with:
+    name: dns-manager-debug
+    path: target/debug/
+    retention-days: 7
+```
+
+## 🧪 TESTING CI PIPELINE
+
+### Local Testing:
+
+```bash
+# Test workflow locally
+act -j build-windows
+
+# Test specific steps
+act -j build-windows --step 1
+```
+
+### Manual Verification:
+
+- [ ] Builds succeed on all platforms
+- [ ] Tests pass
+- [ ] Artifacts upload correctly
+- [ ] Release creation works
+- [ ] Portable version creates properly
+
+## 🚀 DEPLOYMENT STRATEGIES
+
+### GitHub Releases:
+
+- Automatic release creation
+- Cross-platform binaries
+- Release notes generation
+- Download statistics
+
+### Portable Distribution:
+
+- ZIP archives with all dependencies
+- No installation required
+- Run from any directory
+- Version-specific naming
+
+### Update Mechanism:
+
+- Version checking
+- Automatic download
+- Silent updates
+- Rollback capability

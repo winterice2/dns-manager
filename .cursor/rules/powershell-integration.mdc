@@ -1,0 +1,215 @@
+---
+alwaysApply: false
+description: PowerShell command execution patterns and error handling
+globs: src/network/*.rs,src/dns/*.rs
+---
+
+# ⚡ PowerShell Integration - Command Execution Patterns
+
+## 🚨 THE PROBLEM: Unreliable Command Execution
+
+PowerShell commands can fail silently, return unexpected output, or hang indefinitely.
+
+### Common Issues:
+- Commands return localized output (Russian vs English)
+- Parsing fails due to unexpected formats
+- Commands hang on network timeouts
+- Error handling doesn't capture all failure modes
+
+## ✅ SOLUTION: Multi-Layer Command Execution
+
+### 1. Primary: PowerShell Test-Connection
+```rust
+fn run_powershell_command(command: &str) -> Result<String, String> {
+    Command::new(r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe")
+        .arg("-Command")
+        .arg(command)
+        .output()
+        .map_err(|e| format!("Failed to execute command: {}", e))
+        .and_then(|output| {
+            if output.status.success() {
+                Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+            } else {
+                Err(String::from_utf8_lossy(&output.stderr).trim().to_string())
+            }
+        })
+}
+```
+
+### 2. Secondary: Direct Executable Calls
+```rust
+fn run_executable(program: &str, args: &[&str]) -> Result<String, String> {
+    let mut command = Command::new(program);
+    for arg in args {
+        command.arg(arg);
+    }
+
+    command.output()
+        .map_err(|e| format!("Failed to execute {}: {}", program, e))
+        .and_then(|output| {
+            if output.status.success() {
+                Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+            } else {
+                Err(String::from_utf8_lossy(&output.stderr).trim().to_string())
+            }
+        })
+}
+```
+
+### 3. Fallback: CMD Commands
+```rust
+fn run_cmd_command(command: &str) -> Result<String, String> {
+    Command::new(r"C:\Windows\System32\cmd.exe")
+        .arg("/C")
+        .arg(command)
+        .output()
+        .map_err(|e| format!("Failed to execute command: {}", e))
+        .and_then(|output| {
+            if output.status.success() {
+                Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+            } else {
+                Err(String::from_utf8_lossy(&output.stderr).trim().to_string())
+            }
+        })
+}
+```
+
+## 🔄 ROBUST PING IMPLEMENTATION
+
+### Multi-Fallback Ping Strategy:
+```rust
+pub fn ping_dns_server(ip: &str) -> Option<f64> {
+    // 1. Try PowerShell Test-Connection
+    let ps_command = format!("(Test-Connection -ComputerName {} -Count 1 -TimeoutSeconds 5).ResponseTime", ip);
+    match run_powershell_command(&ps_command) {
+        Ok(result) => {
+            if let Ok(ms) = result.trim().parse::<f64>() {
+                println_cp866(&format!("PowerShell ping to {}: {:.1}ms", ip, ms));
+                return Some(ms);
+            }
+        }
+        Err(_) => println_cp866(&format!("PowerShell failed for {}, trying ping.exe", ip)),
+    }
+
+    // 2. Fallback to ping.exe
+    match run_executable("ping", &["-n", "1", "-w", "5000", ip]) {
+        Ok(result) => {
+            // Parse CP866 encoded output
+            if let Some(time) = parse_ping_output(&result) {
+                println_cp866(&format!("ping.exe ping to {}: {:.1}ms", ip, time));
+                return Some(time);
+            }
+        }
+        Err(e) => println_cp866(&format!("ping.exe failed for {}: {}", ip, e)),
+    }
+
+    None
+}
+```
+
+## 📋 COMMAND EXECUTION RULES
+
+### 1. Always Handle All Error Cases
+```rust
+match command_result {
+    Ok(success_output) => process_success(success_output),
+    Err(error_output) => {
+        log_error(&error_output);
+        try_fallback();
+    }
+}
+```
+
+### 2. Use Timeouts for Network Operations
+```rust
+// ✅ GOOD - with timeout
+Test-Connection -ComputerName $ip -Count 1 -TimeoutSeconds 5
+
+// ❌ BAD - can hang indefinitely
+Test-Connection -ComputerName $ip -Count 1
+```
+
+### 3. Parse Localized Output
+```rust
+// Handle both English and Russian output
+if result.contains("time=") || result.contains("время=") {
+    // Parse accordingly
+}
+```
+
+### 4. Log Command Failures
+```rust
+println_cp866(&format!("Command failed: {}", error));
+// Include context for debugging
+println_cp866(&format!("Command was: {}", command));
+```
+
+## 🚨 CRITICAL COMMAND PATTERNS
+
+### DNS Server Queries:
+```powershell
+# ✅ GOOD - reliable DNS server query
+Get-DnsClientServerAddress | Where-Object { $_.AddressFamily -eq 2 } | Select-Object -ExpandProperty ServerAddresses
+```
+
+### Network Adapter Enumeration:
+```powershell
+# ✅ GOOD - get all active adapters
+Get-NetAdapter | Where-Object { $_.Status -eq 'Up' }
+```
+
+### Ping with Timeout:
+```powershell
+# ✅ GOOD - ping with reasonable timeout
+Test-Connection -ComputerName $ip -Count 1 -TimeoutSeconds 5
+```
+
+## 🔍 DEBUGGING COMMAND ISSUES
+
+### 1. Test Raw Commands First
+```rust
+// Test command manually in PowerShell first
+Test-Connection -ComputerName 1.1.1.1 -Count 1 -TimeoutSeconds 5
+```
+
+### 2. Log Raw Output
+```rust
+println_cp866(&format!("Raw command output: {:?}", result));
+// Shows encoding issues, unexpected formats
+```
+
+### 3. Test on Different Systems
+- Windows 10 vs Windows 11
+- Russian vs English locale
+- Different network configurations
+
+### 4. Handle Encoding Issues
+```rust
+// Always decode output properly
+let output = String::from_utf8_lossy(&command_output.stdout);
+// Convert to internal UTF-8 representation
+```
+
+## 🧪 TESTING REQUIREMENTS
+
+### Command Integration Tests:
+- [ ] Test on multiple Windows versions
+- [ ] Test with different locales
+- [ ] Test network failure scenarios
+- [ ] Test command timeout handling
+- [ ] Verify error message encoding
+
+### Output Parsing Tests:
+- [ ] English locale output
+- [ ] Russian locale output
+- [ ] Error condition outputs
+- [ ] Timeout scenario outputs
+
+## 🚨 FAILURE MODES TO HANDLE
+
+1. **Command not found** - executable missing
+2. **Access denied** - insufficient privileges
+3. **Network unreachable** - connectivity issues
+4. **Timeout exceeded** - hanging commands
+5. **Encoding corruption** - character set mismatches
+6. **Unexpected output format** - localization differences

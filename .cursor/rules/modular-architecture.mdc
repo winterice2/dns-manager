@@ -1,0 +1,183 @@
+---
+alwaysApply: true
+description: Modular architecture patterns for maintainable Rust projects
+---
+
+# 🏗️ Modular Architecture - Clean Code Organization
+
+## 📁 PROVEN STRUCTURE PATTERN
+
+Based on DNS Manager project, this structure scales and maintains cleanly:
+
+```
+src/
+├── main.rs              # 🚀 Entry point, app coordination
+├── ui/                  # 🎨 Interface layer
+│   ├── mod.rs          # Module declarations
+│   ├── tabs.rs         # UI tab implementations
+│   └── components.rs   # Reusable UI components
+├── network/            # 🌐 Network operations
+│   ├── mod.rs          # Module declarations
+│   ├── adapters.rs     # Network adapter management
+│   └── dns_utils.rs    # DNS utilities
+└── dns/                # 🔧 DNS business logic
+    ├── mod.rs          # Module declarations
+    ├── providers.rs    # DNS provider definitions & operations
+    └── speed_test.rs   # Performance testing logic
+```
+
+## ✅ MODULE ORGANIZATION PRINCIPLES
+
+### 1. Single Responsibility Per Module
+
+```rust
+// ❌ BAD - everything in main.rs
+// 500+ lines of mixed UI, network, and business logic
+
+// ✅ GOOD - separated concerns
+pub mod ui;
+pub mod network;
+pub mod dns;
+```
+
+### 2. Clean Module Interfaces
+
+```rust
+// In dns/providers.rs
+pub fn get_dns_providers() -> Vec<DNSProvider> { /* ... */ }
+pub fn ping_dns_server(ip: &str) -> Option<f64> { /* ... */ }
+
+// In network/adapters.rs
+pub fn get_network_adapters() -> Vec<NetworkAdapter> { /* ... */ }
+
+// In ui/tabs.rs
+pub fn show_main_tab(app: &mut DNSManager, ui: &mut Ui, ctx: &Context) { /* ... */ }
+```
+
+### 3. Minimal Cross-Module Dependencies
+
+- **UI modules** only import UI-related crates
+- **Network modules** handle OS integration
+- **Business logic** modules contain pure logic
+- **Main module** coordinates between layers
+
+## 🔧 IMPLEMENTATION PATTERNS
+
+### Module Declaration (mod.rs):
+
+```rust
+// In each module directory
+pub mod sub_module1;
+pub mod sub_module2;
+
+// Re-export for convenience
+pub use sub_module1::*;
+pub use sub_module2::*;
+```
+
+### Import Strategy:
+
+```rust
+// In main.rs - import specific functions
+use dns::providers::{get_dns_providers, ping_dns_server};
+use network::adapters::get_network_adapters;
+use ui::tabs::*;
+
+// In module files - import from parent
+use crate::dns::providers::DNSProvider;
+```
+
+### Function Organization:
+
+```rust
+// ✅ GOOD - clear naming and single responsibility
+pub fn ping_dns_server(ip: &str) -> Option<f64> {
+    // Single, focused operation
+}
+
+pub fn get_current_dns() -> Result<String, String> {
+    // Clear, descriptive name
+}
+
+pub fn show_main_tab(app: &mut DNSManager, ui: &mut Ui, ctx: &Context) {
+    // UI-specific function
+}
+```
+
+## 🚨 MODULARITY ANTI-PATTERNS TO AVOID
+
+### 1. God Module (everything in main.rs)
+
+```rust
+// ❌ BAD
+impl DNSManager {
+    // 50+ methods mixing UI, network, and business logic
+    fn ping_server(&mut self) { /* network */ }
+    fn draw_button(&mut self, ui: &mut Ui) { /* UI */ }
+    fn calculate_avg(&mut self) { /* business */ }
+}
+```
+
+### 2. Tight Coupling
+
+```rust
+// ❌ BAD - UI knows about network details
+pub fn show_providers_tab(app: &mut DNSManager, ui: &mut Ui) {
+    let adapters = get_network_adapters(); // UI calling network directly
+    // ...
+}
+```
+
+### 3. Circular Dependencies
+
+```rust
+// ❌ BAD
+// network/mod.rs imports ui components
+// ui/mod.rs imports network functions
+```
+
+## 📋 MODULE CREATION CHECKLIST
+
+### When adding new functionality:
+
+- [ ] **Identify the layer**: UI, Network, or Business Logic
+- [ ] **Create appropriate module** in correct directory
+- [ ] **Define clean public interface**
+- [ ] **Update mod.rs** declarations
+- [ ] **Test module isolation** (can be used independently)
+- [ ] **Update main.rs imports** if needed
+
+### Module file template:
+
+```rust
+// [module_name].rs
+use crate::parent_module::*;
+
+// Public interface
+pub fn public_function() -> ReturnType {
+    // Implementation
+}
+
+// Private implementation
+fn private_helper() {
+    // Helper functions
+}
+```
+
+## 🎯 BENEFITS ACHIEVED
+
+- **Maintainability**: Changes isolated to relevant modules
+- **Testability**: Each module can be tested independently
+- **Readability**: Clear separation of concerns
+- **Scalability**: Easy to add new features without affecting existing code
+- **Team Development**: Multiple developers can work on different modules
+
+## 🔍 REFACTORING INDICATORS
+
+Refactor to modules when you see:
+
+- Single file >300 lines
+- Mixed UI/network/business logic
+- Hard to test individual components
+- Difficult to understand file purposes
+- Frequent merge conflicts in large files

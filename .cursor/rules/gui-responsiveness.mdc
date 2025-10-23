@@ -1,0 +1,82 @@
+---
+globs: src/ui/*.rs,src/main.rs
+alwaysApply: false
+---
+# 🎨 GUI Responsiveness - Critical Pattern
+
+## ❌ PROBLEM: UI Blocking Operations
+
+Long-running operations in UI update methods cause interface freezing:
+
+```rust
+// BLOCKS UI - BAD
+fn update(&mut self, ctx: &egui::Context) {
+    if ui.button("Test").clicked() {
+        let result = long_running_ping_test(); // FREEZES ENTIRE UI
+        update_display(result);
+    }
+}
+```
+
+## ✅ SOLUTION: Frame Counter Pattern
+
+Execute operations only every N-th frame to keep UI responsive:
+
+```rust
+#[derive(Default)]
+struct App {
+    frame_counter: u32,      // Track frames
+    is_processing: bool,     // Processing state
+    current_provider: usize, // Current operation index
+}
+
+fn update_speed_test(&mut self) -> bool {
+    if !self.is_speed_testing {
+        return false;
+    }
+
+    // Execute only every 10th frame - keeps UI smooth
+    self.frame_counter += 1;
+    if self.frame_counter % 10 != 0 {
+        return false; // Skip this frame
+    }
+
+    // Safe to perform operation now
+    let provider = &self.providers[self.current_provider];
+    let result = ping_provider(provider); // Non-blocking
+    self.update_results(result);
+
+    true // Continue processing
+}
+```
+
+## 📋 IMPLEMENTATION RULES
+
+### 1. Never block UI thread
+
+- Use frame counters for long operations
+- Break work into small chunks
+- Show progress indicators
+
+### 2. Visual feedback during processing
+
+```rust
+let button_text = if self.is_processing {
+    "⏳ Processing..." // Show progress
+} else {
+    "⚡ Start Test"
+};
+```
+
+### 3. Graceful error handling
+
+- Continue UI updates even if operations fail
+- Show error states without blocking
+- Allow user cancellation
+
+## 🚨 CRITICAL REMINDERS
+
+- **ALWAYS** use frame counters for operations >100ms
+- **NEVER** call blocking I/O in UI update methods
+- **TEST** UI responsiveness on slow operations
+- **PROVIDE** visual feedback for all long operations
