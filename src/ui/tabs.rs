@@ -170,10 +170,10 @@ pub fn show_main_tab(app: &mut DNSManager, ui: &mut Ui, ctx: &Context) {
 
             for (index, result) in app.speed_results.iter().enumerate() {
                 let medal = match index {
-                    0 => "🥇",
-                    1 => "🥈",
-                    2 => "🥉",
-                    _ => "📍",
+                    0 => "[1]".to_string(),
+                    1 => "[2]".to_string(),
+                    2 => "[3]".to_string(),
+                    _ => format!("[{}]", index + 1),
                 };
 
                 let avg_text = match result.avg_ping {

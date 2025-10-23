@@ -32,6 +32,7 @@ struct DNSManager {
     selected_tab: usize,
     is_speed_testing: bool,
     network_adapters: Vec<NetworkAdapter>,
+    speed_test_frame_counter: u32, // Счетчик кадров для управления скоростью тестирования
 }
 
 impl DNSManager {
@@ -68,16 +69,17 @@ impl DNSManager {
         // Получаем информацию о сетевых адаптерах при запуске
         let network_adapters = network::adapters::get_network_adapters();
 
-        Self {
-            status: "🚀 Ready for space launch!".to_string(),
-            current_dns: String::new(),
-            speed_results: Vec::new(),
-            custom_primary: String::new(),
-            custom_secondary: String::new(),
-            selected_tab: 0,
-            is_speed_testing: false,
-            network_adapters,
-        }
+                Self {
+                    status: "🚀 Ready for space launch!".to_string(),
+                    current_dns: String::new(),
+                    speed_results: Vec::new(),
+                    custom_primary: String::new(),
+                    custom_secondary: String::new(),
+                    selected_tab: 0,
+                    is_speed_testing: false,
+                    network_adapters,
+                    speed_test_frame_counter: 0,
+                }
     }
 
 
@@ -120,7 +122,13 @@ impl DNSManager {
             return false;
         }
 
-        let providers = Self::get_dns_providers();
+        // Выполняем тестирование только каждый 10-й кадр, чтобы не блокировать UI
+        self.speed_test_frame_counter += 1;
+        if self.speed_test_frame_counter % 10 != 0 {
+            return false; // Пропускаем этот кадр
+        }
+
+        let providers = dns::providers::get_dns_providers();
         let current_count = self.speed_results.len();
 
         if current_count < providers.len() {
@@ -128,10 +136,11 @@ impl DNSManager {
             let provider = &providers[current_count];
             self.status = format!("🧪 Тестирование {}... ({}/{})", provider.name, current_count + 1, providers.len());
 
-            let primary_ping = Self::ping_dns_server(&provider.primary);
-            let secondary_ping = Self::ping_dns_server(&provider.secondary);
+            // Выполняем тестирование (теперь только каждый 10-й кадр)
+            let primary_ping = dns::providers::ping_dns_server(&provider.primary);
+            let secondary_ping = dns::providers::ping_dns_server(&provider.secondary);
 
-            let mut result = SpeedTestResult {
+            let mut result = dns::providers::SpeedTestResult {
                 provider: provider.name.clone(),
                 primary_ping,
                 secondary_ping,
@@ -152,6 +161,7 @@ impl DNSManager {
         } else {
             // Тестирование завершено
             self.is_speed_testing = false;
+            self.speed_test_frame_counter = 0; // Сбрасываем счетчик
 
             // Сортируем по средней задержке
             self.speed_results.sort_by(|a, b| {

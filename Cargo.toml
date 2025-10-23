@@ -4,9 +4,9 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-# Используем более простые зависимости совместимые с MSVC
-eframe = "0.25"
-egui = "0.25"
+eframe = { version = "0.24", default-features = false, features = ["glow"] }
+egui = "0.24"
+tokio = { version = "1.0", features = ["process", "rt-multi-thread", "macros"] }
 winapi = { version = "0.3", features = ["windef", "winuser"] }
-tokio = { version = "1.0", features = ["process", "rt-multi-thread"] }
 serde_json = "1.0"
+encoding_rs = "0.8"

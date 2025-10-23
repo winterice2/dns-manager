@@ -1,6 +1,20 @@
 // Модуль для DNS провайдеров
 
 use std::collections::HashSet;
+use encoding_rs;
+use std::io::{self, Write};
+
+// Функция для вывода в CP866 кодировке (для корректного отображения в Windows PowerShell)
+fn println_cp866(message: &str) {
+    // Конвертируем UTF-8 в CP866 (DOS Russian)
+    let (cow, _encoding, _had_errors) = encoding_rs::WINDOWS_1251.encode(message);
+    // Если CP866 недоступна, используем Windows-1251 как альтернативу
+    let bytes = cow.as_ref();
+
+    // Выводим как есть (Windows консоль должна правильно интерпретировать)
+    let _ = io::stdout().write_all(bytes);
+    let _ = io::stdout().write_all(b"\r\n");
+}
 
 #[derive(Clone)]
 pub struct DNSProvider {
@@ -60,25 +74,94 @@ pub fn get_dns_providers() -> Vec<DNSProvider> {
 }
 
 pub fn ping_dns_server(ip: &str) -> Option<f64> {
-    // Используем PowerShell для измерения задержки через Test-Connection
-    let command = format!("Test-Connection -ComputerName {} -Count 1 | Select-Object -ExpandProperty ResponseTime", ip);
+    // Пробуем несколько подходов для измерения задержки
 
-    match run_powershell_command(&command) {
+    // Сначала пробуем Test-Connection с более простой командой
+    let command1 = format!("(Test-Connection -ComputerName {} -Count 1 -TimeoutSeconds 5).ResponseTime", ip);
+
+    match run_powershell_command(&command1) {
         Ok(result) => {
-            // Парсим результат
             if let Ok(ms) = result.trim().parse::<f64>() {
-                println!("PowerShell ping to {}: {:.1}ms", ip, ms);
-                Some(ms)
-            } else {
-                println!("Failed to parse PowerShell ping result for {}: {}", ip, result);
-                None
+                println_cp866(&format!("PowerShell Test-Connection ping to {}: {:.1}ms", ip, ms));
+                return Some(ms);
             }
         }
-        Err(e) => {
-            println!("PowerShell ping to {} failed: {}", ip, e);
-            None
+        Err(_) => {
+            // Если Test-Connection не работает, пробуем ping.exe
+            println_cp866(&format!("Test-Connection failed for {}, trying ping.exe", ip));
         }
     }
+
+    // Резервный вариант - используем ping.exe напрямую
+    match run_executable("ping", &["-n", "1", "-w", "5000", ip]) {
+        Ok(result) => {
+
+            // Сначала пробуем распарсить английский вывод: "Reply from 1.1.1.1: bytes=32 time=14ms TTL=57"
+            if let Some(time_part) = result.split("time=").nth(1) {
+                if let Some(ms_str) = time_part.split("ms").next() {
+                    if let Ok(ms) = ms_str.trim().parse::<f64>() {
+                        println_cp866(&format!("ping.exe ping to {}: {:.1}ms", ip, ms));
+                        return Some(ms);
+                    }
+                }
+            }
+
+            // Ищем паттерн "время=числа�" в сыром выводе
+            // Из логов видно: "�۶�=19��", "�۶�=47��" и т.д.
+            // Ищем "=" за которым идут цифры, а потом специфический символ
+            if let Some(eq_pos) = result.find("�۶�=") {
+                let after_eq = &result[eq_pos + 4..]; // 4 = длина "�۶�="
+                // Ищем следующий не-цифровой символ
+                if let Some(end_pos) = after_eq.chars().position(|c| !c.is_ascii_digit()) {
+                    let number_str = &after_eq[..end_pos];
+                    if let Ok(ms) = number_str.parse::<f64>() {
+                        println_cp866(&format!("ping.exe ping to {}: {:.1}ms (CP866 decoded)", ip, ms));
+                        return Some(ms);
+                    }
+                }
+            }
+
+            // Исправленный поиск: ищем второе число после "=" (время, а не размер пакета)
+            let eq_positions: Vec<usize> = result.match_indices('=').map(|(pos, _)| pos).collect();
+            if eq_positions.len() >= 2 {
+                // Второе "=" должно быть у времени (после "число байт=32 время=22мс")
+                let time_eq_pos = eq_positions[1];
+                let after_time_eq = &result[time_eq_pos + 1..];
+                // Ищем цифры до первого не-цифрового символа
+                if let Some(end_pos) = after_time_eq.chars().position(|c| !c.is_ascii_digit() && c != '.') {
+                    let number_str = &after_time_eq[..end_pos];
+                    if let Ok(ms) = number_str.parse::<f64>() {
+                        // Проверяем что это разумное значение пинга (1-10000мс)
+                        if ms >= 1.0 && ms < 10000.0 {
+                            println_cp866(&format!("ping.exe ping to {}: {:.1}ms (time parser)", ip, ms));
+                            return Some(ms);
+                        }
+                    }
+                }
+            }
+
+            // Запасной вариант: ищем числа между специфическими символами
+            if let Some(time_marker_pos) = result.find("�६�=") {
+                let after_marker = &result[time_marker_pos + 4..];
+                if let Some(end_pos) = after_marker.chars().position(|c| !c.is_ascii_digit() && c != '.') {
+                    let number_str = &after_marker[..end_pos];
+                    if let Ok(ms) = number_str.parse::<f64>() {
+                        if ms >= 1.0 && ms < 10000.0 {
+                            println_cp866(&format!("ping.exe ping to {}: {:.1}ms (CP866 marker)", ip, ms));
+                            return Some(ms);
+                        }
+                    }
+                }
+            }
+
+            println_cp866(&format!("Failed to parse ping.exe result for {}: {}", ip, result));
+        }
+        Err(e) => {
+            println_cp866(&format!("ping.exe ping to {} failed: {}", ip, e));
+        }
+    }
+
+    None
 }
 
 pub fn get_current_dns() -> Result<String, String> {
@@ -200,6 +283,27 @@ fn run_cmd_command(command: &str) -> Result<String, String> {
         .arg(command)
         .output()
         .map_err(|e| format!("Failed to execute command: {}", e))?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+
+    if output.status.success() {
+        Ok(stdout)
+    } else {
+        Err(stderr)
+    }
+}
+
+fn run_executable(program: &str, args: &[&str]) -> Result<String, String> {
+    use std::process::Command;
+
+    let mut command = Command::new(program);
+    for arg in args {
+        command.arg(arg);
+    }
+
+    let output = command.output()
+        .map_err(|e| format!("Failed to execute {}: {}", program, e))?;
 
     let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
     let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
