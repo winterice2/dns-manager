@@ -10,6 +10,7 @@ description: Comprehensive error handling and logging patterns
 Many operations fail silently or show cryptic error messages that don't help debugging.
 
 ### Common Issues:
+
 - Operations return `None` or empty strings
 - No context about what failed
 - Users see technical error codes
@@ -19,6 +20,7 @@ Many operations fail silently or show cryptic error messages that don't help deb
 ## ✅ SOLUTION: Comprehensive Error Handling Strategy
 
 ### 1. Typed Error Results
+
 ```rust
 // ✅ GOOD - explicit error types
 pub fn ping_dns_server(ip: &str) -> Option<f64> {
@@ -35,6 +37,7 @@ pub fn set_dns(primary: &str, secondary: &str) -> Result<String, String> {
 ```
 
 ### 2. Contextual Error Messages
+
 ```rust
 // ✅ GOOD - descriptive errors
 match run_powershell_command(&command) {
@@ -51,6 +54,7 @@ match run_powershell_command(&command) {
 ```
 
 ### 3. Multi-Level Error Recovery
+
 ```rust
 pub fn ping_dns_server(ip: &str) -> Option<f64> {
     // Level 1: Primary method (PowerShell)
@@ -71,6 +75,7 @@ pub fn ping_dns_server(ip: &str) -> Option<f64> {
 ```
 
 ### 4. Operation Logging
+
 ```rust
 // ✅ GOOD - comprehensive logging
 println_cp866(&format!("Starting DNS speed test for {} providers", providers.len()));
@@ -90,6 +95,7 @@ println_cp866(&format!("DNS speed test completed, {} successful", success_count)
 ## 📋 ERROR HANDLING PATTERNS
 
 ### 1. Command Execution Errors
+
 ```rust
 fn run_command_with_logging(command: &str, description: &str) -> Result<String, String> {
     println_cp866(&format!("Executing: {}", description));
@@ -109,6 +115,7 @@ fn run_command_with_logging(command: &str, description: &str) -> Result<String, 
 ```
 
 ### 2. Network Operation Errors
+
 ```rust
 fn handle_network_error(operation: &str, ip: &str, error: &str) {
     let context = match error {
@@ -124,6 +131,7 @@ fn handle_network_error(operation: &str, ip: &str, error: &str) {
 ```
 
 ### 3. Parsing Errors
+
 ```rust
 fn safe_parse_number(input: &str, field: &str) -> Option<f64> {
     match input.trim().parse::<f64>() {
@@ -144,6 +152,7 @@ fn safe_parse_number(input: &str, field: &str) -> Option<f64> {
 ```
 
 ### 4. UI Error Display
+
 ```rust
 fn show_error_in_ui(ui: &mut Ui, error: &str) {
     ui.colored_label(Color32::RED, "❌ Error:");
@@ -162,21 +171,25 @@ fn show_error_in_ui(ui: &mut Ui, error: &str) {
 ## 🚨 CRITICAL ERROR SCENARIOS
 
 ### 1. PowerShell Command Failures
+
 - **Cause**: Missing privileges, wrong syntax, timeouts
 - **Handling**: Fallback to CMD, clear error messages
 - **Recovery**: Try alternative commands
 
 ### 2. Network Connectivity Issues
+
 - **Cause**: DNS server down, firewall blocks, routing problems
 - **Handling**: Timeout handling, multiple attempts
 - **Recovery**: Try different servers, show offline status
 
 ### 3. Encoding/Character Set Issues
+
 - **Cause**: UTF-8 vs CP866 mismatch in Windows
 - **Handling**: encoding_rs conversion, CP866-aware logging
 - **Recovery**: Graceful degradation, alternative output methods
 
 ### 4. File System Access Issues
+
 - **Cause**: Permission denied, file locked, disk full
 - **Handling**: Check permissions, retry with delay
 - **Recovery**: Alternative storage locations, user notification
@@ -184,6 +197,7 @@ fn show_error_in_ui(ui: &mut Ui, error: &str) {
 ## 🔍 DEBUGGING METHODOLOGY
 
 ### 1. Error Context Logging
+
 ```rust
 fn log_error_context(operation: &str, params: &[(&str, &str)], error: &str) {
     println_cp866(&format!("Error in {}:", operation));
@@ -197,6 +211,7 @@ fn log_error_context(operation: &str, params: &[(&str, &str)], error: &str) {
 ```
 
 ### 2. State Dumping
+
 ```rust
 fn dump_debug_state(app: &DNSManager) {
     println_cp866(&format!("Debug state:"));
@@ -208,6 +223,7 @@ fn dump_debug_state(app: &DNSManager) {
 ```
 
 ### 3. Progressive Debugging
+
 ```rust
 // Level 1: Basic operation check
 println_cp866("Starting operation...");
@@ -225,6 +241,7 @@ println_cp866(&format!("Parsed result: {:?}", parsed));
 ## 🧪 ERROR TESTING REQUIREMENTS
 
 ### Unit Tests:
+
 ```rust
 #[test]
 fn test_error_handling() {
@@ -240,6 +257,7 @@ fn test_error_handling() {
 ```
 
 ### Integration Tests:
+
 - [ ] Network failure scenarios
 - [ ] Permission denied situations
 - [ ] Invalid input handling
@@ -247,6 +265,7 @@ fn test_error_handling() {
 - [ ] Encoding edge cases
 
 ### UI Error Testing:
+
 - [ ] Error message display
 - [ ] Recovery suggestions
 - [ ] User-friendly language
@@ -255,12 +274,14 @@ fn test_error_handling() {
 ## 📊 ERROR MONITORING
 
 ### Error Classification:
+
 - **Critical**: App crashes, data loss
 - **Major**: Feature completely broken
 - **Minor**: Partial degradation
 - **Cosmetic**: UI/UX issues
 
 ### Error Reporting:
+
 ```rust
 fn report_error(level: ErrorLevel, operation: &str, error: &str, context: &str) {
     let emoji = match level {

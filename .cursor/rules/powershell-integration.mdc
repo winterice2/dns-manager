@@ -11,6 +11,7 @@ globs: src/network/*.rs,src/dns/*.rs
 PowerShell commands can fail silently, return unexpected output, or hang indefinitely.
 
 ### Common Issues:
+
 - Commands return localized output (Russian vs English)
 - Parsing fails due to unexpected formats
 - Commands hang on network timeouts
@@ -19,6 +20,7 @@ PowerShell commands can fail silently, return unexpected output, or hang indefin
 ## ✅ SOLUTION: Multi-Layer Command Execution
 
 ### 1. Primary: PowerShell Test-Connection
+
 ```rust
 fn run_powershell_command(command: &str) -> Result<String, String> {
     Command::new(r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe")
@@ -37,6 +39,7 @@ fn run_powershell_command(command: &str) -> Result<String, String> {
 ```
 
 ### 2. Secondary: Direct Executable Calls
+
 ```rust
 fn run_executable(program: &str, args: &[&str]) -> Result<String, String> {
     let mut command = Command::new(program);
@@ -57,6 +60,7 @@ fn run_executable(program: &str, args: &[&str]) -> Result<String, String> {
 ```
 
 ### 3. Fallback: CMD Commands
+
 ```rust
 fn run_cmd_command(command: &str) -> Result<String, String> {
     Command::new(r"C:\Windows\System32\cmd.exe")
@@ -77,6 +81,7 @@ fn run_cmd_command(command: &str) -> Result<String, String> {
 ## 🔄 ROBUST PING IMPLEMENTATION
 
 ### Multi-Fallback Ping Strategy:
+
 ```rust
 pub fn ping_dns_server(ip: &str) -> Option<f64> {
     // 1. Try PowerShell Test-Connection
@@ -110,6 +115,7 @@ pub fn ping_dns_server(ip: &str) -> Option<f64> {
 ## 📋 COMMAND EXECUTION RULES
 
 ### 1. Always Handle All Error Cases
+
 ```rust
 match command_result {
     Ok(success_output) => process_success(success_output),
@@ -121,6 +127,7 @@ match command_result {
 ```
 
 ### 2. Use Timeouts for Network Operations
+
 ```rust
 // ✅ GOOD - with timeout
 Test-Connection -ComputerName $ip -Count 1 -TimeoutSeconds 5
@@ -130,6 +137,7 @@ Test-Connection -ComputerName $ip -Count 1
 ```
 
 ### 3. Parse Localized Output
+
 ```rust
 // Handle both English and Russian output
 if result.contains("time=") || result.contains("время=") {
@@ -138,6 +146,7 @@ if result.contains("time=") || result.contains("время=") {
 ```
 
 ### 4. Log Command Failures
+
 ```rust
 println_cp866(&format!("Command failed: {}", error));
 // Include context for debugging
@@ -147,18 +156,21 @@ println_cp866(&format!("Command was: {}", command));
 ## 🚨 CRITICAL COMMAND PATTERNS
 
 ### DNS Server Queries:
+
 ```powershell
 # ✅ GOOD - reliable DNS server query
 Get-DnsClientServerAddress | Where-Object { $_.AddressFamily -eq 2 } | Select-Object -ExpandProperty ServerAddresses
 ```
 
 ### Network Adapter Enumeration:
+
 ```powershell
 # ✅ GOOD - get all active adapters
 Get-NetAdapter | Where-Object { $_.Status -eq 'Up' }
 ```
 
 ### Ping with Timeout:
+
 ```powershell
 # ✅ GOOD - ping with reasonable timeout
 Test-Connection -ComputerName $ip -Count 1 -TimeoutSeconds 5
@@ -167,23 +179,27 @@ Test-Connection -ComputerName $ip -Count 1 -TimeoutSeconds 5
 ## 🔍 DEBUGGING COMMAND ISSUES
 
 ### 1. Test Raw Commands First
+
 ```rust
 // Test command manually in PowerShell first
 Test-Connection -ComputerName 1.1.1.1 -Count 1 -TimeoutSeconds 5
 ```
 
 ### 2. Log Raw Output
+
 ```rust
 println_cp866(&format!("Raw command output: {:?}", result));
 // Shows encoding issues, unexpected formats
 ```
 
 ### 3. Test on Different Systems
+
 - Windows 10 vs Windows 11
 - Russian vs English locale
 - Different network configurations
 
 ### 4. Handle Encoding Issues
+
 ```rust
 // Always decode output properly
 let output = String::from_utf8_lossy(&command_output.stdout);
@@ -193,6 +209,7 @@ let output = String::from_utf8_lossy(&command_output.stdout);
 ## 🧪 TESTING REQUIREMENTS
 
 ### Command Integration Tests:
+
 - [ ] Test on multiple Windows versions
 - [ ] Test with different locales
 - [ ] Test network failure scenarios
@@ -200,6 +217,7 @@ let output = String::from_utf8_lossy(&command_output.stdout);
 - [ ] Verify error message encoding
 
 ### Output Parsing Tests:
+
 - [ ] English locale output
 - [ ] Russian locale output
 - [ ] Error condition outputs

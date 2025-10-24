@@ -22,7 +22,7 @@ pub fn show_main_tab(app: &mut DNSManager, ui: &mut Ui, ctx: &Context) {
                 Ok(current) => {
                     if current.contains("1.1.1.1") || current.contains("8.8.8.8") || current.contains("9.9.9.9") || current.contains("208.67.222.222") || current.contains("94.140.14.14") {
                         // Reset to automatic
-                        match crate::dns::providers::reset_dns() {
+                        match app.reset_dns() {
                             Ok(_) => app.status = "🔄 Returned to autopilot".to_string(),
                             Err(e) => app.status = format!("💥 System failure: {}", e),
                         }
@@ -47,7 +47,7 @@ pub fn show_main_tab(app: &mut DNSManager, ui: &mut Ui, ctx: &Context) {
         ui.add_space(10.0);
 
         if ui.add_sized([ui.available_width(), 40.0], egui::Button::new("🔄 Reset to DHCP")).clicked() {
-            match crate::dns::providers::reset_dns() {
+            match app.reset_dns() {
                 Ok(_) => app.status = "🔄 Returned to autopilot".to_string(),
                 Err(e) => app.status = format!("💥 Engine failure: {}", e),
             }
@@ -67,71 +67,74 @@ pub fn show_main_tab(app: &mut DNSManager, ui: &mut Ui, ctx: &Context) {
         ui.separator();
 
         ui.label("⭐ Выберите DNS провайдер для космического путешествия:");
-        ui.add_space(15.0);
+        ui.add_space(10.0);
 
-        // Cloudflare
-        if ui.add_sized([ui.available_width(), 45.0], egui::Button::new("☁️ Cloudflare DNS\n1.1.1.1, 1.0.0.1")).clicked() {
-            match crate::dns::providers::set_dns("1.1.1.1", "1.0.0.1") {
-                Ok(_) => app.status = "🎉 Arrived at Cloudflare: 1.1.1.1, 1.0.0.1!".to_string(),
-                Err(e) => app.status = format!("💥 Ship crashed: {}", e),
+        // Прокручиваемая область для провайдеров
+        egui::ScrollArea::vertical().show(ui, |ui| {
+            let providers = crate::dns::providers::get_dns_providers();
+
+            for provider in providers {
+                ui.add_space(5.0);
+
+                let button_text = format!("{}\n{}, {}", provider.name, provider.primary, provider.secondary);
+                let emoji = match provider.name.as_str() {
+                    "Cloudflare" => "☁️",
+                    "Google" => "🔍",
+                    "Quad9" => "🔒",
+                    "OpenDNS" => "👨‍👩‍👧‍👦",
+                    "AdGuard" => "🚫",
+                    "CleanBrowsing" => "🧹",
+                    "Comodo" => "🔐",
+                    "Yandex" => "🇷🇺",
+                    "DNS.WATCH" => "👁️",
+                    "UncensoredDNS" => "🆓",
+                    "Freenom" => "💰",
+                    "Level3" => "🏢",
+                    _ => "🌐",
+                };
+
+                let full_button_text = format!("{} {}", emoji, button_text);
+
+                if ui.add_sized([ui.available_width(), 50.0], egui::Button::new(full_button_text)).clicked() {
+                    match app.set_dns(&provider.primary, &provider.secondary) {
+                        Ok(_) => {
+                            let success_msg = match provider.name.as_str() {
+                                "Cloudflare" => "🎉 Arrived at Cloudflare!",
+                                "Google" => "🎉 Welcome to Google!",
+                                "Quad9" => "🎉 Secured with Quad9!",
+                                "OpenDNS" => "🎉 Family protection activated!",
+                                "AdGuard" => "🎉 Ads blocked!",
+                                "CleanBrowsing" => "🎉 Clean browsing activated!",
+                                "Comodo" => "🎉 Secured with Comodo!",
+                                "Yandex" => "🎉 Welcome to Yandex!",
+                                "DNS.WATCH" => "🎉 DNS.WATCH activated!",
+                                "UncensoredDNS" => "🎉 UncensoredDNS activated!",
+                                "Freenom" => "🎉 Freenom DNS activated!",
+                                "Level3" => "🎉 Level3 DNS activated!",
+                                _ => "🎉 DNS changed successfully!",
+                            };
+                            app.status = format!("{} {}, {}", success_msg, provider.primary, provider.secondary);
+                        }
+                        Err(e) => {
+                            let error_emoji = match provider.name.as_str() {
+                                "Cloudflare" => "💥 Ship crashed",
+                                "Google" => "💥 System malfunction",
+                                "Quad9" => "💥 Security breach",
+                                "OpenDNS" => "💥 Family emergency",
+                                "AdGuard" => "💥 Ad blocking failure",
+                                "CleanBrowsing" => "💥 Cleaning failure",
+                                _ => "💥 DNS change failed",
+                            };
+                            app.status = format!("{}: {}", error_emoji, e);
+                        }
+                    }
+                    ctx.request_repaint();
+                }
+
+                // Показываем описание при наведении
+                ui.small(&provider.description);
             }
-            ctx.request_repaint();
-        }
-
-        ui.add_space(8.0);
-
-        // Google
-        if ui.add_sized([ui.available_width(), 45.0], egui::Button::new("🔍 Google DNS\n8.8.8.8, 8.8.4.4")).clicked() {
-            match crate::dns::providers::set_dns("8.8.8.8", "8.8.4.4") {
-                Ok(_) => app.status = "🎉 Welcome to Google: 8.8.8.8, 8.8.4.4!".to_string(),
-                Err(e) => app.status = format!("💥 System malfunction: {}", e),
-            }
-            ctx.request_repaint();
-        }
-
-        ui.add_space(8.0);
-
-        // Quad9
-        if ui.add_sized([ui.available_width(), 45.0], egui::Button::new("🔒 Quad9 DNS\n9.9.9.9, 149.112.112.112")).clicked() {
-            match crate::dns::providers::set_dns("9.9.9.9", "149.112.112.112") {
-                Ok(_) => app.status = "🎉 Secured with Quad9: 9.9.9.9, 149.112.112.112!".to_string(),
-                Err(e) => app.status = format!("💥 Security breach: {}", e),
-            }
-            ctx.request_repaint();
-        }
-
-        ui.add_space(8.0);
-
-        // OpenDNS
-        if ui.add_sized([ui.available_width(), 45.0], egui::Button::new("👨‍👩‍👧‍👦 OpenDNS\n208.67.222.222, 208.67.220.220")).clicked() {
-            match crate::dns::providers::set_dns("208.67.222.222", "208.67.220.220") {
-                Ok(_) => app.status = "🎉 Family protection activated!".to_string(),
-                Err(e) => app.status = format!("💥 Family emergency: {}", e),
-            }
-            ctx.request_repaint();
-        }
-
-        ui.add_space(8.0);
-
-        // AdGuard
-        if ui.add_sized([ui.available_width(), 45.0], egui::Button::new("🚫 AdGuard DNS\n94.140.14.14, 94.140.15.15")).clicked() {
-            match crate::dns::providers::set_dns("94.140.14.14", "94.140.15.15") {
-                Ok(_) => app.status = "🎉 Ads blocked: 94.140.14.14, 94.140.15.15!".to_string(),
-                Err(e) => app.status = format!("💥 Ad blocking failure: {}", e),
-            }
-            ctx.request_repaint();
-        }
-
-        ui.add_space(8.0);
-
-        // CleanBrowsing
-        if ui.add_sized([ui.available_width(), 45.0], egui::Button::new("🧹 CleanBrowsing\n185.228.168.9, 185.228.169.9")).clicked() {
-            match crate::dns::providers::set_dns("185.228.168.9", "185.228.169.9") {
-                Ok(_) => app.status = "🎉 Clean browsing activated!".to_string(),
-                Err(e) => app.status = format!("💥 Cleaning failure: {}", e),
-            }
-            ctx.request_repaint();
-        }
+        });
 
         ui.add_space(20.0);
         ui.label("💡 Все изменения применяются ко всем активным сетевым адаптерам");
@@ -228,26 +231,61 @@ pub fn show_main_tab(app: &mut DNSManager, ui: &mut Ui, ctx: &Context) {
         } else {
             for adapter in &app.network_adapters {
                 ui.add_space(5.0);
-                ui.label(format!("🔌 **{}** ({})", adapter.name, adapter.status));
+
+                // Заголовок с статусом подключения
+                let status_emoji = if adapter.is_online { "🟢" } else { "🔴" };
+                let type_emoji = match adapter.connection_type.as_str() {
+                    "WiFi" => "📶",
+                    "Ethernet" => "🔌",
+                    _ => "🌐",
+                };
 
                 ui.horizontal(|ui| {
-                    ui.label("📍 MAC адрес:");
+                    ui.label(format!("{} {} **{}**", status_emoji, type_emoji, adapter.name));
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        ui.label(&adapter.mac_address);
+                        ui.label(&adapter.connection_speed);
                     });
                 });
 
-                ui.horizontal(|ui| {
-                    ui.label("🌐 IP адрес:");
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        ui.label(adapter.ip_addresses.join(", "));
-                    });
-                });
+                ui.add_space(5.0);
 
-                ui.horizontal(|ui| {
-                    ui.label("🔧 DNS серверы:");
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        ui.label(adapter.dns_servers.join(", "));
+                // Основная информация
+                ui.group(|ui| {
+                    ui.horizontal(|ui| {
+                        ui.label("📍 MAC адрес:");
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            ui.label(&adapter.mac_address);
+                        });
+                    });
+
+                    ui.horizontal(|ui| {
+                        ui.label("🌐 IP адрес:");
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            ui.label(adapter.ip_addresses.join(", "));
+                        });
+                    });
+
+                    ui.horizontal(|ui| {
+                        ui.label("🚪 Шлюз:");
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            ui.label(&adapter.gateway);
+                        });
+                    });
+
+                    if let Some(ping) = adapter.ping_to_gateway {
+                        ui.horizontal(|ui| {
+                            ui.label("⚡ Пинг до шлюза:");
+                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                ui.label(format!("{:.1}ms", ping));
+                            });
+                        });
+                    }
+
+                    ui.horizontal(|ui| {
+                        ui.label("🔧 DNS серверы:");
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            ui.label(adapter.dns_servers.join(", "));
+                        });
                     });
                 });
 
@@ -273,14 +311,14 @@ pub fn show_main_tab(app: &mut DNSManager, ui: &mut Ui, ctx: &Context) {
         ui.horizontal(|ui| {
             ui.label("🎯 Версия:");
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                ui.label("v1.2.1 - Мониторинг Сети");
+                ui.label("v1.5.0 - Полный Функционал");
             });
         });
 
         ui.horizontal(|ui| {
             ui.label("🔧 Провайдеров DNS:");
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                ui.label("6 доступных");
+                ui.label("12 доступных");
             });
         });
 
@@ -301,6 +339,30 @@ pub fn show_main_tab(app: &mut DNSManager, ui: &mut Ui, ctx: &Context) {
         ui.label("👨‍👩‍👧‍👦 **OpenDNS (208.67.222.222)**: Семейная фильтрация контента");
         ui.label("🚫 **AdGuard (94.140.14.14)**: Блокировка рекламы");
         ui.label("🧹 **CleanBrowsing (185.228.168.9)**: Безопасный интернет для детей");
+        ui.label("🔐 **Comodo (8.26.56.26)**: Безопасный DNS с фильтрацией");
+        ui.label("🇷🇺 **Yandex (77.88.8.8)**: DNS от Яндекса для русскоязычных");
+        ui.label("👁️ **DNS.WATCH (84.200.69.80)**: Независимый DNS без логирования");
+        ui.label("🆓 **UncensoredDNS (91.239.100.100)**: DNS без цензуры");
+        ui.label("💰 **Freenom (80.80.80.80)**: Бесплатный DNS от Freenom");
+        ui.label("🏢 **Level3 (209.244.0.3)**: DNS от Level 3 Communications");
+
+        ui.add_space(20.0);
+        ui.label("⌚ Горячие клавиши:");
+        ui.add_space(10.0);
+
+        ui.group(|ui| {
+            ui.label("💡 **Горячие клавиши для быстрого управления DNS:**");
+            ui.add_space(5.0);
+
+            ui.small("• **Ctrl+1**: Cloudflare DNS (1.1.1.1)");
+            ui.small("• **Ctrl+2**: Google DNS (8.8.8.8)");
+            ui.small("• **Ctrl+3**: Quad9 DNS (9.9.9.9)");
+            ui.small("• **Ctrl+4**: OpenDNS (208.67.222.222)");
+            ui.small("• **Ctrl+5**: AdGuard DNS (94.140.14.14)");
+            ui.small("• **Ctrl+6**: CleanBrowsing (185.228.168.9)");
+            ui.small("• **Ctrl+0**: Сброс на DHCP");
+            ui.small("• **F5**: Обновить статус DNS");
+        });
 
         ui.add_space(20.0);
         ui.label("🔗 Полезные ссылки:");
@@ -310,4 +372,8 @@ pub fn show_main_tab(app: &mut DNSManager, ui: &mut Ui, ctx: &Context) {
         ui.hyperlink_to("🌐 Cloudflare DNS", "https://1.1.1.1/");
         ui.hyperlink_to("🔍 Google Public DNS", "https://dns.google/");
         ui.hyperlink_to("🔒 Quad9", "https://www.quad9.net/");
+        ui.hyperlink_to("👨‍👩‍👧‍👦 OpenDNS", "https://www.opendns.com/");
+        ui.hyperlink_to("🚫 AdGuard DNS", "https://adguard-dns.io/");
+        ui.hyperlink_to("🧹 CleanBrowsing", "https://cleanbrowsing.org/");
+        ui.hyperlink_to("🇷🇺 Yandex DNS", "https://dns.yandex.ru/");
     }

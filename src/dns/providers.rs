@@ -70,6 +70,42 @@ pub fn get_dns_providers() -> Vec<DNSProvider> {
             secondary: "185.228.169.9".to_string(),
             description: "Безопасный интернет для детей".to_string(),
         },
+        DNSProvider {
+            name: "Comodo".to_string(),
+            primary: "8.26.56.26".to_string(),
+            secondary: "8.20.247.20".to_string(),
+            description: "Безопасный DNS с фильтрацией".to_string(),
+        },
+        DNSProvider {
+            name: "Yandex".to_string(),
+            primary: "77.88.8.8".to_string(),
+            secondary: "77.88.8.1".to_string(),
+            description: "DNS от Яндекса для русскоязычных".to_string(),
+        },
+        DNSProvider {
+            name: "DNS.WATCH".to_string(),
+            primary: "84.200.69.80".to_string(),
+            secondary: "84.200.70.40".to_string(),
+            description: "Независимый DNS без логирования".to_string(),
+        },
+        DNSProvider {
+            name: "UncensoredDNS".to_string(),
+            primary: "91.239.100.100".to_string(),
+            secondary: "89.233.43.71".to_string(),
+            description: "DNS без цензуры".to_string(),
+        },
+        DNSProvider {
+            name: "Freenom".to_string(),
+            primary: "80.80.80.80".to_string(),
+            secondary: "80.80.81.81".to_string(),
+            description: "Бесплатный DNS от Freenom".to_string(),
+        },
+        DNSProvider {
+            name: "Level3".to_string(),
+            primary: "209.244.0.3".to_string(),
+            secondary: "209.244.0.4".to_string(),
+            description: "DNS от Level 3 Communications".to_string(),
+        },
     ]
 }
 
@@ -313,4 +349,24 @@ fn run_executable(program: &str, args: &[&str]) -> Result<String, String> {
     } else {
         Err(stderr)
     }
+}
+
+// Валидация IP адреса (IPv4)
+pub fn validate_ip_address(ip: &str) -> bool {
+    let parts: Vec<&str> = ip.split('.').collect();
+
+    // Должен быть ровно 4 части
+    if parts.len() != 4 {
+        return false;
+    }
+
+    // Каждая часть должна быть числом от 0 до 255
+    for part in parts {
+        match part.parse::<u8>() {
+            Ok(_) => continue,
+            Err(_) => return false,
+        }
+    }
+
+    true
 }

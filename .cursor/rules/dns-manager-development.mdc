@@ -1,0 +1,180 @@
+---
+alwaysApply: true
+---
+
+# DNS Manager Development Guide
+
+## 🚀 Quick Setup for New Agents
+
+### Essential Tools Installation:
+
+```bash
+# 1. Install MinGW via scoop (REQUIRED for Rust compilation)
+scoop install mingw
+
+# 2. Add to PATH (run before cargo build)
+$env:PATH = "C:\Users\$env:USERNAME\scoop\apps\mingw\current\bin;" + $env:PATH
+
+# 3. Verify installation
+Get-Command dlltool
+```
+
+### Cargo.toml Template for Windows GUI Apps:
+
+```toml
+[dependencies]
+eframe = { version = "0.24", default-features = false, features = ["glow"] }
+egui = "0.24"
+tokio = { version = "1.0", features = ["process", "rt-multi-thread", "macros"] }
+winapi = { version = "0.3", features = ["windef", "winuser"] }
+```
+
+## 🔧 Common Compilation Issues & Fixes
+
+### Error: `dlltool.exe not found`
+
+**Solution:** Install MinGW and add to PATH before compilation
+
+```bash
+scoop install mingw
+$env:PATH = "C:\Users\$env:USERNAME\scoop\apps\mingw\current\bin;" + $env:PATH
+cargo build
+```
+
+### Error: `unresolved import winapi::um::winuser`
+
+**Solution:** Add winapi with required features to Cargo.toml
+
+```toml
+winapi = { version = "0.3", features = ["windef", "winuser"] }
+```
+
+### Error: `Access denied (os error 5)`
+
+**Solution:** Run application as administrator
+
+```bash
+Start-Process -FilePath ".\target\debug\dns-manager.exe" -Verb RunAs
+```
+
+### Error: Status update not working
+
+**Solution:** Simplify PowerShell command for DNS retrieval
+
+```rust
+async fn get_current_dns() -> Result<String, String> {
+    let command = "Get-DnsClientServerAddress | Where-Object { $_.AddressFamily -eq 2 } | Select-Object -ExpandProperty ServerAddresses | Select-Object -First 1";
+    let result = Self::run_powershell_command(command).await?;
+    if result.is_empty() {
+        Ok("Автоматический".to_string())
+    } else {
+        Ok(result)
+    }
+}
+```
+
+## 🛠️ PowerShell Network Commands Best Practices
+
+### Universal Network Adapter Detection:
+
+```powershell
+# Use this instead of hardcoding WiFi adapters
+$adapters = Get-NetAdapter | Where-Object { $_.Status -eq 'Up' }
+foreach ($adapter in $adapters) {
+    # Your DNS operations here
+    Set-DnsClientServerAddress -InterfaceAlias $adapter.Name -ServerAddresses ('1.1.1.1','1.0.0.1')
+}
+```
+
+### Proper Error Handling:
+
+```powershell
+try {
+    Set-DnsClientServerAddress -InterfaceAlias $adapter.Name -ServerAddresses ('1.1.1.1','1.0.0.1')
+    "Success: DNS set on $($adapter.Name)"
+} catch {
+    "Error on $($adapter.Name): $($_.Exception.Message)"
+    continue
+}
+```
+
+## 📋 Development Workflow
+
+### 1. Environment Setup:
+
+- [ ] Install MinGW via scoop
+- [ ] Verify PATH contains MinGW bin directory
+- [ ] Check Rust version: `rustc --version`
+
+### 2. Compilation:
+
+- [ ] Add MinGW to PATH: `$env:PATH = "C:\Users\$env:USERNAME\scoop\apps\mingw\current\bin;" + $env:PATH`
+- [ ] Run: `cargo build`
+- [ ] For release: `cargo build --release`
+
+### 3. Testing:
+
+- [ ] Stop any running instances: `Stop-Process -Name "dns-manager" -Force`
+- [ ] Run as admin: `Start-Process -FilePath ".\target\debug\dns-manager.exe" -Verb RunAs`
+- [ ] Test on multiple network adapters
+
+### 4. Deployment:
+
+- [ ] Use release build for production
+- [ ] Ensure admin privileges for DNS changes
+- [ ] Test on clean Windows environment
+
+## 🎯 Project Structure
+
+### Rust GUI Version (`dns-manager-rust/`)
+
+```
+src/main.rs          # Main application logic
+Cargo.toml           # Dependencies (remember winapi!)
+memory.md           # Development knowledge base
+target/debug/       # Debug builds
+target/release/     # Release builds
+```
+
+### Go CLI Version (`dns-manager-cli/`)
+
+```
+main.go             # CLI application
+go.mod             # Go dependencies
+README.md          # Usage instructions
+```
+
+## 🚨 Critical Reminders
+
+1. **Always run DNS-changing applications as Administrator**
+2. **Add MinGW to PATH before Rust compilation**
+3. **Use universal adapter detection instead of WiFi-only**
+4. **Test on multiple network configurations**
+5. **Check memory.md for detailed troubleshooting**
+
+## 🔍 Debug Commands
+
+```bash
+# Check MinGW installation
+Get-ChildItem 'C:\Users\$env:USERNAME\scoop\apps\mingw\current\bin' -Filter dlltool.exe
+
+# Verify PATH
+$env:PATH -split ';' | Select-String -Pattern 'mingw'
+
+# Check active network adapters
+Get-NetAdapter | Where-Object { $_.Status -eq 'Up' } | Format-Table Name, Status, PhysicalMediaType
+
+# Check current DNS
+Get-DnsClientServerAddress | Where-Object { $_.AddressFamily -eq 2 } | Format-Table InterfaceAlias, ServerAddresses
+```
+
+## 📚 Related Files
+
+- [memory.md](mdc:dns-manager-rust/memory.md) - Detailed troubleshooting guide
+- [Cargo.toml](mdc:dns-manager-rust/Cargo.toml) - Dependency configuration
+- [src/main.rs](mdc:dns-manager-rust/src/main.rs) - Main application code
+- [README.md](mdc:dns-manager-cli/README.md) - CLI version documentation
+
+---
+
+_This rule ensures consistent development workflow and prevents common Windows/Rust compilation issues in DNS Manager projects._

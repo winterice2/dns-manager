@@ -2,6 +2,7 @@
 globs: src/ui/*.rs,src/main.rs
 alwaysApply: false
 ---
+
 # 🎨 GUI Responsiveness - Critical Pattern
 
 ## ❌ PROBLEM: UI Blocking Operations

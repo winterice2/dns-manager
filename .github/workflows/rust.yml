@@ -1,141 +1,141 @@
 name: Rust CI/CD
 
 on:
-    push:
-        branches: [master, develop]
-    pull_request:
-        branches: [master, develop]
-    release:
-        types: [published]
+  push:
+    branches: [master, develop]
+  pull_request:
+    branches: [master, develop]
+  release:
+    types: [published]
 
 jobs:
-    build-windows:
-        name: Build for Windows
-        runs-on: windows-latest
+  build-windows:
+    name: Build for Windows
+    runs-on: windows-latest
 
-        steps:
-            - name: Checkout code
-              uses: actions/checkout@v4
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-            - name: Setup Rust toolchain
-              uses: dtolnay/rust-toolchain@stable
-              with:
-                  targets: x86_64-pc-windows-gnu
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-gnu
 
-            - name: Cache dependencies
-              uses: Swatinem/rust-cache@v2
+      - name: Cache dependencies
+        uses: Swatinem/rust-cache@v2
 
-            - name: Install MinGW via scoop
-              run: |
-                  Set-ExecutionPolicy RemoteSigned -Scope CurrentUser -Force
-                  iwr -useb get.scoop.sh | iex
-                  scoop install git
-                  scoop install mingw
-                  echo "C:\Users\runneradmin\scoop\apps\mingw\current\bin" | Out-File -FilePath $env:GITHUB_PATH -Append
+      - name: Install MinGW via scoop
+        run: |
+          Set-ExecutionPolicy RemoteSigned -Scope CurrentUser -Force
+          iwr -useb get.scoop.sh | iex
+          scoop install git
+          scoop install mingw
+          echo "C:\Users\runneradmin\scoop\apps\mingw\current\bin" | Out-File -FilePath $env:GITHUB_PATH -Append
 
-            - name: Verify MinGW installation
-              run: |
-                  Get-Command dlltool
-                  dlltool --version
+      - name: Verify MinGW installation
+        run: |
+          Get-Command dlltool
+          dlltool --version
 
-            - name: Build in debug mode
-              run: cargo build
+      - name: Build in debug mode
+        run: cargo build
 
-            - name: Build in release mode
-              run: cargo build --release
+      - name: Build in release mode
+        run: cargo build --release
 
-            - name: Test
-              run: cargo test
+      - name: Test
+        run: cargo test
 
-            - name: Create portable version
-              run: .\create-portable.ps1
-              shell: pwsh
+      - name: Create portable version
+        run: .\create-portable.ps1
+        shell: pwsh
 
-            - name: Upload build artifacts
-              uses: actions/upload-artifact@v4
-              with:
-                  name: dns-manager-windows
-                  path: |
-                      target/release/dns-manager.exe
-                      DNS-Manager-Portable.zip
-                  if-no-files-found: error
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dns-manager-windows
+          path: |
+            target/release/dns-manager.exe
+            DNS-Manager-Portable.zip
+          if-no-files-found: error
 
-            - name: Upload to release (only on release published)
-              if: github.event_name == 'release'
-              uses: softprops/action-gh-release@v2
-              with:
-                  files: |
-                      target/release/dns-manager.exe
-                      DNS-Manager-Portable.zip
-              env:
-                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Upload to release (only on release published)
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            target/release/dns-manager.exe
+            DNS-Manager-Portable.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-    build-linux:
-        name: Build for Linux
-        runs-on: ubuntu-latest
+  build-linux:
+    name: Build for Linux
+    runs-on: ubuntu-latest
 
-        steps:
-            - name: Checkout code
-              uses: actions/checkout@v4
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-            - name: Setup Rust toolchain
-              uses: dtolnay/rust-toolchain@stable
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
 
-            - name: Cache dependencies
-              uses: Swatinem/rust-cache@v2
+      - name: Cache dependencies
+        uses: Swatinem/rust-cache@v2
 
-            - name: Build in release mode
-              run: cargo build --release
+      - name: Build in release mode
+        run: cargo build --release
 
-            - name: Test
-              run: cargo test
+      - name: Test
+        run: cargo test
 
-            - name: Upload Linux build artifacts
-              uses: actions/upload-artifact@v4
-              with:
-                  name: dns-manager-linux
-                  path: target/release/dns-manager
-                  if-no-files-found: error
+      - name: Upload Linux build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dns-manager-linux
+          path: target/release/dns-manager
+          if-no-files-found: error
 
-            - name: Upload to release (only on release published)
-              if: github.event_name == 'release'
-              uses: softprops/action-gh-release@v2
-              with:
-                  files: target/release/dns-manager
-              env:
-                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Upload to release (only on release published)
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: target/release/dns-manager
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-    build-macos:
-        name: Build for macOS
-        runs-on: macos-latest
+  build-macos:
+    name: Build for macOS
+    runs-on: macos-latest
 
-        steps:
-            - name: Checkout code
-              uses: actions/checkout@v4
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-            - name: Setup Rust toolchain
-              uses: dtolnay/rust-toolchain@stable
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
 
-            - name: Cache dependencies
-              uses: Swatinem/rust-cache@v2
+      - name: Cache dependencies
+        uses: Swatinem/rust-cache@v2
 
-            - name: Build in release mode
-              run: cargo build --release
+      - name: Build in release mode
+        run: cargo build --release
 
-            - name: Test
-              run: cargo test
+      - name: Test
+        run: cargo test
 
-            - name: Upload macOS build artifacts
-              uses: actions/upload-artifact@v4
-              with:
-                  name: dns-manager-macos
-                  path: target/release/dns-manager
-                  if-no-files-found: error
+      - name: Upload macOS build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dns-manager-macos
+          path: target/release/dns-manager
+          if-no-files-found: error
 
-            - name: Upload to release (only on release published)
-              if: github.event_name == 'release'
-              uses: softprops/action-gh-release@v2
-              with:
-                  files: target/release/dns-manager
-              env:
-                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Upload to release (only on release published)
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: target/release/dns-manager
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
