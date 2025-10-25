@@ -103,6 +103,10 @@ struct DNSManager {
     scheduler_new_primary: String,
     scheduler_new_secondary: String,
 
+    // Кэширование пинга для оптимизации производительности
+    current_ping: Option<f64>,
+    last_ping_measurement: Option<Instant>,
+
     // Отслеживание результатов команд
     command_results: Vec<CommandResult>,
 }
@@ -217,6 +221,10 @@ impl DNSManager {
         scheduler_new_primary: String::new(),
         scheduler_new_secondary: String::new(),
 
+        // Кэширование пинга для оптимизации производительности
+        current_ping: None,
+        last_ping_measurement: None,
+
         // Отслеживание результатов команд
         command_results: Vec::new(),
 
@@ -287,7 +295,8 @@ impl DNSManager {
         }
 
         // Адаптивный интервал тестирования в зависимости от режима
-        let frame_divisor = if self.is_background_mode { 40 } else { 10 };
+        // Увеличиваем интервал для снижения нагрузки на систему
+        let frame_divisor = if self.is_background_mode { 120 } else { 30 }; // Каждые 2 сек в фоне, каждые 0.5 сек активно
 
         // Выполняем тестирование только каждый N-й кадр, чтобы не блокировать UI
         self.speed_test_frame_counter += 1;
@@ -1380,18 +1389,28 @@ impl DNSManager {
             return None;
         }
 
+        // Кэшируем результаты измерений - обновляем не чаще чем раз в 3 секунды
+        let now = std::time::Instant::now();
+        if let Some(last_measurement) = self.last_ping_measurement {
+            if now.duration_since(last_measurement) < std::time::Duration::from_secs(3) {
+                return self.current_ping; // Возвращаем кэшированное значение
+            }
+        }
+
         // Измеряем пинг до первого доступного адаптера
         for adapter in &self.network_adapters {
             if !adapter.gateway.is_empty() {
                 let command = format!("ping {}", adapter.gateway);
                 if let Some(ping) = dns::providers::ping_dns_server(&adapter.gateway) {
-                    // Логируем успешный результат
+                    // Логируем успешный результат (только при успешном измерении)
                     self.log_command_result(
                         &command,
                         true,
                         &format!("{:.1}ms", ping),
                         None
                     );
+                    self.current_ping = Some(ping);
+                    self.last_ping_measurement = Some(now);
                     return Some(ping);
                 }
             }
@@ -1404,6 +1423,9 @@ impl DNSManager {
             "no_adapters",
             Some("Нет доступных адаптеров с шлюзом")
         );
+
+        // Обновляем время последней попытки даже при неудаче
+        self.last_ping_measurement = Some(now);
 
         None
     }
