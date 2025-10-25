@@ -19,9 +19,6 @@ impl NotificationManager {
         self.silent_mode = silent;
     }
 
-    pub fn is_silent(&self) -> bool {
-        self.silent_mode
-    }
 
     #[cfg(target_os = "windows")]
     pub fn send_dns_change_notification(&self, provider_name: &str, primary: &str, secondary: &str) -> Result<(), Box<dyn std::error::Error>> {
@@ -70,25 +67,6 @@ impl NotificationManager {
         Ok(())
     }
 
-    #[cfg(target_os = "windows")]
-    pub fn send_speed_test_complete_notification(&self, fastest_provider: &str, avg_ping: f64) -> Result<(), Box<dyn std::error::Error>> {
-        if self.silent_mode {
-            return Ok(());
-        }
-
-        Toast::new(Toast::POWERSHELL_APP_ID)
-            .title("Тест скорости завершен")
-            .text1(&format!("Быстрейший: {} ({:.1}ms)", fastest_provider, avg_ping))
-            .duration(ToastDuration::Short)
-            .show()?;
-
-        Ok(())
-    }
-
-    #[cfg(not(target_os = "windows"))]
-    pub fn send_speed_test_complete_notification(&self, _fastest_provider: &str, _avg_ping: f64) -> Result<(), Box<dyn std::error::Error>> {
-        Ok(())
-    }
 }
 
 impl Default for NotificationManager {

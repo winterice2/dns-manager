@@ -44,8 +44,8 @@ struct HistoryEntry {
 }
 
 #[derive(Clone)]
+#[allow(dead_code)]
 struct CommandResult {
-    timestamp: String,
     command: String,
     success: bool,
     result: String,
@@ -55,7 +55,6 @@ struct CommandResult {
 #[derive(Default)]
 struct DNSManager {
     status: String,
-    current_dns: String,
     speed_results: Vec<SpeedTestResult>,
     custom_primary: String,
     custom_secondary: String,
@@ -166,7 +165,6 @@ impl DNSManager {
 
         Self {
             status: "🚀 Ready for space launch!".to_string(),
-            current_dns: String::new(),
             speed_results: Vec::new(),
             custom_primary: String::new(),
             custom_secondary: String::new(),
@@ -228,6 +226,7 @@ impl DNSManager {
 
 
     // Вспомогательные функции-обертки для модулей
+    #[allow(dead_code)]
     fn get_current_dns() -> Result<String, String> {
         dns::providers::get_current_dns()
     }
@@ -259,14 +258,17 @@ impl DNSManager {
         result
     }
 
+    #[allow(dead_code)]
     fn ping_dns_server(ip: &str) -> Option<f64> {
         dns::providers::ping_dns_server(ip)
     }
 
+    #[allow(dead_code)]
     fn get_dns_providers() -> Vec<DNSProvider> {
         dns::providers::get_dns_providers()
     }
 
+    #[allow(dead_code)]
     fn get_network_adapters() -> Vec<NetworkAdapter> {
         network::adapters::get_network_adapters()
     }
@@ -1406,17 +1408,9 @@ impl DNSManager {
         None
     }
 
-    fn check_app_status(&self) -> bool {
-        // Проверяем, запущено ли приложение
-        // В будущем можно добавить более сложную логику
-        true // Пока просто возвращаем true, приложение работает
-    }
 
     fn log_command_result(&mut self, command: &str, success: bool, result: &str, error: Option<&str>) {
-        use chrono::Local;
-
         let entry = CommandResult {
-            timestamp: Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
             command: command.to_string(),
             success,
             result: result.to_string(),
@@ -1442,7 +1436,176 @@ impl DNSManager {
         }
     }
 
-    fn get_last_command_status(&self) -> Option<&CommandResult> {
-        self.command_results.last()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_dns_manager_creation() {
+        let app = DNSManager::default();
+        assert_eq!(app.selected_tab, 0);
+        assert!(!app.is_speed_testing);
+        assert!(app.speed_results.is_empty());
+    }
+
+    #[test]
+    fn test_command_result_creation() {
+        let result = CommandResult {
+            command: "test command".to_string(),
+            success: true,
+            result: "output".to_string(),
+            error_message: None,
+        };
+
+        assert_eq!(result.command, "test command");
+        assert!(result.success);
+        assert_eq!(result.result, "output");
+        assert!(result.error_message.is_none());
+    }
+
+    #[test]
+    fn test_dns_schedule_creation() {
+        let schedule = DNSSchedule {
+            primary: "1.1.1.1".to_string(),
+            secondary: "1.0.0.1".to_string(),
+            name: "Cloudflare".to_string(),
+        };
+
+        assert_eq!(schedule.primary, "1.1.1.1");
+        assert_eq!(schedule.secondary, "1.0.0.1");
+        assert_eq!(schedule.name, "Cloudflare");
+    }
+
+    #[test]
+    fn test_history_entry_creation() {
+        let entry = HistoryEntry {
+            timestamp: "2024-01-01 12:00:00".to_string(),
+            action: "DNS changed".to_string(),
+            dns_before: "8.8.8.8".to_string(),
+            dns_after: "1.1.1.1".to_string(),
+        };
+
+        assert_eq!(entry.action, "DNS changed");
+        assert_eq!(entry.dns_before, "8.8.8.8");
+        assert_eq!(entry.dns_after, "1.1.1.1");
+    }
+
+    #[test]
+    fn test_log_command_result() {
+        let mut app = DNSManager::default();
+
+        // Test successful command
+        app.log_command_result("test cmd", true, "success", None);
+        assert_eq!(app.command_results.len(), 1);
+        assert!(app.command_results[0].success);
+        assert_eq!(app.command_results[0].command, "test cmd");
+
+        // Test failed command
+        app.log_command_result("failed cmd", false, "", Some("error"));
+        assert_eq!(app.command_results.len(), 2);
+        assert!(!app.command_results[1].success);
+        assert_eq!(app.command_results[1].error_message, Some("error".to_string()));
+    }
+
+    #[test]
+    fn test_command_history_limit() {
+        let mut app = DNSManager::default();
+
+        // Add 55 commands (limit is 50)
+        for i in 0..55 {
+            app.log_command_result(&format!("cmd {}", i), true, "ok", None);
+        }
+
+        // Should keep only last 50
+        assert_eq!(app.command_results.len(), 50);
+        assert_eq!(app.command_results[0].command, "cmd 5"); // First should be removed
+        assert_eq!(app.command_results[49].command, "cmd 54"); // Last should be kept
+    }
+
+
+    #[test]
+    fn test_scheduler_initialization() {
+        let app = DNSManager::default();
+
+        assert!(!app.scheduler_enabled);
+        assert_eq!(app.scheduler_interval, 0); // Default interval
+        assert!(app.scheduler_dns_list.is_empty());
+        assert_eq!(app.scheduler_current_index, 0);
+    }
+
+    #[test]
+    fn test_theme_initialization() {
+        let app = DNSManager::default();
+
+        assert!(!app.theme_dark);
+        assert!(!app.theme_custom_colors);
+        // Default theme colors should be set
+    }
+
+    #[test]
+    fn test_tray_initialization() {
+        let app = DNSManager::default();
+
+        assert!(!app.tray_enabled);
+        assert!(app.tray_manager.is_none());
+        assert!(!app.window_visible);
+        assert!(!app.is_background_mode);
+    }
+
+    #[test]
+    fn test_hotkeys_initialization() {
+        let app = DNSManager::default();
+
+        assert!(!app.hotkeys_enabled);
+    }
+
+    #[test]
+    fn test_auto_startup_initialization() {
+        let app = DNSManager::default();
+
+        assert!(!app.auto_startup_enabled);
+    }
+
+
+    #[test]
+    fn test_history_initialization() {
+        let app = DNSManager::default();
+
+        assert!(app.history.is_empty());
+    }
+
+    #[test]
+    fn test_custom_dns_initialization() {
+        let app = DNSManager::default();
+
+        assert!(app.custom_primary.is_empty());
+        assert!(app.custom_secondary.is_empty());
+        assert!(app.custom_dns_name.is_empty());
+        assert!(app.custom_dns_description.is_empty());
+    }
+
+    #[test]
+    fn test_network_adapters_initialization() {
+        let app = DNSManager::default();
+
+        assert!(app.network_adapters.is_empty());
+    }
+
+    #[test]
+    fn test_speed_test_initialization() {
+        let app = DNSManager::default();
+
+        assert!(!app.is_speed_testing);
+        assert!(app.speed_results.is_empty());
+        assert_eq!(app.speed_test_frame_counter, 0);
+    }
+
+    #[test]
+    fn test_status_initialization() {
+        let app = DNSManager::default();
+
+        assert_eq!(app.status, "");
     }
 }

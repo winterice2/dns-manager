@@ -5,7 +5,6 @@ use serde_json;
 #[derive(Clone, Default)]
 pub struct NetworkAdapter {
     pub name: String,
-    pub status: String,
     pub mac_address: String,
     pub ip_addresses: Vec<String>,
     pub dns_servers: Vec<String>,
@@ -55,7 +54,7 @@ pub fn get_network_adapters() -> Vec<NetworkAdapter> {
                 Ok(adapters_json) => {
                     let mut adapters = Vec::new();
                     for adapter_json in adapters_json {
-                        if let (Some(name), Some(status), Some(mac), Some(ip), Some(dns), Some(conn_type), Some(gateway)) = (
+                        if let (Some(name), Some(_status), Some(mac), Some(ip), Some(dns), Some(conn_type), Some(gateway)) = (
                             adapter_json.get("Name").and_then(|v| v.as_str()),
                             adapter_json.get("Status").and_then(|v| v.as_str()),
                             adapter_json.get("MacAddress").and_then(|v| v.as_str()),
@@ -96,7 +95,6 @@ pub fn get_network_adapters() -> Vec<NetworkAdapter> {
 
                             adapters.push(NetworkAdapter {
                                 name: name.to_string(),
-                                status: status.to_string(),
                                 mac_address: mac.to_string(),
                                 ip_addresses,
                                 dns_servers,
@@ -112,7 +110,6 @@ pub fn get_network_adapters() -> Vec<NetworkAdapter> {
                 }
                 Err(_) => vec![NetworkAdapter {
                     name: "Ошибка получения данных".to_string(),
-                    status: "N/A".to_string(),
                     mac_address: "N/A".to_string(),
                     ip_addresses: vec!["N/A".to_string()],
                     dns_servers: vec!["N/A".to_string()],
@@ -126,7 +123,6 @@ pub fn get_network_adapters() -> Vec<NetworkAdapter> {
         }
         Err(_) => vec![NetworkAdapter {
             name: "Ошибка выполнения команды".to_string(),
-            status: "N/A".to_string(),
             mac_address: "N/A".to_string(),
             ip_addresses: vec!["N/A".to_string()],
             dns_servers: vec!["N/A".to_string()],
