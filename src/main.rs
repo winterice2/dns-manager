@@ -2,6 +2,10 @@
 mod ui;
 mod network;
 mod dns;
+mod tray;
+mod notifications;
+mod settings;
+mod auto_startup;
 
 fn main() -> Result<(), eframe::Error> {
     let options = eframe::NativeOptions {
@@ -81,9 +85,19 @@ struct DNSManager {
 
     // Системный трей
     tray_enabled: bool,
+    tray_manager: Option<tray::TrayManager>,
+    window_visible: bool,
+    is_background_mode: bool,
+
+    // Уведомления
+    notification_manager: notifications::NotificationManager,
+    silent_mode: bool,
 
     // Горячие клавиши
     hotkeys_enabled: bool,
+
+    // Автозапуск
+    auto_startup_enabled: bool,
 
     // Для планировщика - временные поля ввода
     scheduler_new_name: String,
@@ -96,6 +110,9 @@ struct DNSManager {
 
 impl DNSManager {
     fn new(cc: &eframe::CreationContext<'_>) -> Self {
+        // Загружаем сохраненные настройки
+        let saved_settings = settings::AppSettings::load();
+
         // 🚀 КОСМИЧЕСКАЯ ЭМОЦИОНАЛЬНАЯ ТЕМА 2025 - Путь Андромеды 🌌
         let mut style = (*cc.egui_ctx.style()).clone();
         style.visuals.dark_mode = true; // Темная тема для космоса
@@ -161,8 +178,8 @@ impl DNSManager {
             custom_dns_description: String::new(),
 
             // Планировщик DNS
-            scheduler_enabled: false,
-            scheduler_interval: 60, // 1 час по умолчанию
+            scheduler_enabled: saved_settings.scheduler_enabled,
+            scheduler_interval: saved_settings.scheduler_interval,
             scheduler_dns_list,
             scheduler_current_index: 0,
             scheduler_last_switch: None,
@@ -171,17 +188,31 @@ impl DNSManager {
             history: Vec::new(),
 
             // Темы интерфейса
-            theme_dark: true,
-            theme_custom_colors: false,
-            theme_primary: [147, 51, 234], // Фиолетовый
-            theme_secondary: [59, 130, 246], // Голубой
-            theme_accent: [6, 182, 212], // Бирюзовый
+            theme_dark: saved_settings.theme_dark,
+            theme_custom_colors: saved_settings.theme_custom_colors,
+            theme_primary: saved_settings.theme_primary,
+            theme_secondary: saved_settings.theme_secondary,
+            theme_accent: saved_settings.theme_accent,
 
             // Системный трей
-            tray_enabled: false,
+            tray_enabled: saved_settings.tray_enabled,
+            tray_manager: None,
+            window_visible: saved_settings.window_visible,
+            is_background_mode: false,
+
+            // Уведомления
+            notification_manager: {
+                let mut nm = notifications::NotificationManager::new();
+                nm.set_silent_mode(saved_settings.silent_mode);
+                nm
+            },
+            silent_mode: saved_settings.silent_mode,
 
         // Горячие клавиши
-        hotkeys_enabled: true,
+        hotkeys_enabled: saved_settings.hotkeys_enabled,
+
+        // Автозапуск
+        auto_startup_enabled: auto_startup::AutoStartupManager::is_enabled(),
 
         // Для планировщика - временные поля ввода
         scheduler_new_name: "Мой DNS".to_string(),
@@ -208,6 +239,9 @@ impl DNSManager {
         if let Ok(ref _success_msg) = result {
             let dns_after = format!("{}, {}", primary, secondary);
             self.log_history("Ручная установка DNS", &dns_before, &dns_after);
+
+            // Отправляем уведомление (если не в тихом режиме)
+            let _ = self.notification_manager.send_dns_change_notification("DNS", primary, secondary);
         }
 
         result
@@ -250,9 +284,12 @@ impl DNSManager {
             return false;
         }
 
-        // Выполняем тестирование только каждый 10-й кадр, чтобы не блокировать UI
+        // Адаптивный интервал тестирования в зависимости от режима
+        let frame_divisor = if self.is_background_mode { 40 } else { 10 };
+
+        // Выполняем тестирование только каждый N-й кадр, чтобы не блокировать UI
         self.speed_test_frame_counter += 1;
-        if self.speed_test_frame_counter % 10 != 0 {
+        if self.speed_test_frame_counter % frame_divisor != 0 {
             return false; // Пропускаем этот кадр
         }
 
@@ -264,7 +301,7 @@ impl DNSManager {
             let provider = &providers[current_count];
             self.status = format!("🧪 Тестирование {}... ({}/{})", provider.name, current_count + 1, providers.len());
 
-            // Выполняем тестирование (теперь только каждый 10-й кадр)
+            // Выполняем тестирование
             let primary_ping = dns::providers::ping_dns_server(&provider.primary);
             let secondary_ping = dns::providers::ping_dns_server(&provider.secondary);
 
@@ -343,6 +380,9 @@ impl DNSManager {
                 let dns_after = format!("{} ({}, {})", name, primary, secondary);
                 self.status = format!("🕒 Автопереключение: {}", dns_after);
                 self.log_history("Автопереключение планировщика", &dns_before, &dns_after);
+
+                // Уведомление планировщика
+                let _ = self.notification_manager.send_scheduler_notification(&name);
             }
             Err(e) => {
                 self.status = format!("❌ Ошибка автопереключения: {}", e);
@@ -427,12 +467,69 @@ impl DNSManager {
         ctx.set_style(style);
     }
 
+    // Сохранение настроек
+    fn save_settings(&self) {
+        let settings = settings::AppSettings {
+            tray_enabled: self.tray_enabled,
+            window_visible: self.window_visible,
+            silent_mode: self.silent_mode,
+            scheduler_enabled: self.scheduler_enabled,
+            scheduler_interval: self.scheduler_interval,
+            theme_dark: self.theme_dark,
+            theme_custom_colors: self.theme_custom_colors,
+            theme_primary: self.theme_primary,
+            theme_secondary: self.theme_secondary,
+            theme_accent: self.theme_accent,
+            hotkeys_enabled: self.hotkeys_enabled,
+            auto_startup_enabled: self.auto_startup_enabled,
+        };
+
+        if let Err(e) = settings.save() {
+            eprintln!("Failed to save settings: {}", e);
+        }
+    }
+
 }
 
 impl eframe::App for DNSManager {
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+    fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         // Применяем текущую тему
         self.apply_theme(ctx);
+
+        // Инициализируем tray manager при первом запуске (если включен)
+        if self.tray_enabled && self.tray_manager.is_none() {
+            match tray::TrayManager::new() {
+                Ok(tray) => {
+                    self.tray_manager = Some(tray);
+                    self.status = "✅ Системный трей активирован".to_string();
+                }
+                Err(e) => {
+                    self.status = format!("❌ Ошибка создания трея: {}", e);
+                    self.tray_enabled = false;
+                }
+            }
+        }
+
+        // Обработка событий трея
+        if let Some(ref tray_manager) = self.tray_manager {
+            for event in tray_manager.poll_events() {
+                match event {
+                    tray::TrayEvent::Show => {
+                        self.window_visible = true;
+                        ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
+                        self.is_background_mode = false;
+                    }
+                    tray::TrayEvent::Hide => {
+                        self.window_visible = false;
+                        ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
+                        self.is_background_mode = true;
+                    }
+                    tray::TrayEvent::Quit => {
+                        ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                    }
+                }
+            }
+        }
 
         // Проверяем планировщик DNS
         self.check_scheduler();
@@ -446,6 +543,15 @@ impl eframe::App for DNSManager {
         if self.is_speed_testing {
             self.update_speed_test();
             ctx.request_repaint(); // Запрашиваем перерисовку для обновления UI
+        }
+
+        // Адаптивная частота обновления в зависимости от режима
+        if self.is_background_mode {
+            // В фоновом режиме обновляемся реже (каждые 2 секунды)
+            ctx.request_repaint_after(std::time::Duration::from_secs(2));
+        } else {
+            // В активном режиме - каждые 0.5 секунды
+            ctx.request_repaint_after(std::time::Duration::from_millis(500));
         }
 
         egui::CentralPanel::default().show(ctx, |ui| {
@@ -727,14 +833,19 @@ impl DNSManager {
         ui.add_space(5.0);
 
         ui.horizontal(|ui| {
-            if ui.button("📤 Экспорт настроек").clicked() {
-                // TODO: Реализовать экспорт
-                self.status = "📤 Экспорт настроек - функция в разработке".to_string();
+            if ui.button("💾 Сохранить настройки").clicked() {
+                self.save_settings();
+                self.status = "💾 Настройки сохранены в ~/.dns-manager/settings.json".to_string();
             }
 
-            if ui.button("📥 Импорт настроек").clicked() {
-                // TODO: Реализовать импорт
-                self.status = "📥 Импорт настроек - функция в разработке".to_string();
+            if ui.button("📂 Показать файл настроек").clicked() {
+                #[cfg(target_os = "windows")]
+                {
+                    let home = dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from("."));
+                    let path = home.join(".dns-manager");
+                    let _ = std::process::Command::new("explorer").arg(path).spawn();
+                }
+                self.status = "📂 Открыта папка настроек".to_string();
             }
         });
 
@@ -753,8 +864,71 @@ impl DNSManager {
         if self.tray_enabled {
             ui.add_space(5.0);
             ui.small("💡 Приложение будет доступно в системном трее");
-            ui.small("   • Щелчок левой кнопкой: показать/скрыть окно");
-            ui.small("   • Щелчок правой кнопкой: контекстное меню");
+            ui.small("   • Меню 'Показать': открыть окно");
+            ui.small("   • Меню 'Скрыть': свернуть в трей");
+            ui.small("   • Меню 'Выход': закрыть приложение");
+
+            ui.add_space(10.0);
+
+            // Кнопка для сворачивания в трей
+            if ui.button("📥 Свернуть в трей").clicked() {
+                self.window_visible = false;
+                self.is_background_mode = true;
+                self.status = "📥 Приложение свернуто в системный трей".to_string();
+            }
+        }
+
+        ui.add_space(10.0);
+
+        // Уведомления
+        ui.horizontal(|ui| {
+            ui.label("🔔 Уведомления:");
+            if ui.checkbox(&mut self.silent_mode, "Тихий режим").changed() {
+                self.notification_manager.set_silent_mode(self.silent_mode);
+                if self.silent_mode {
+                    self.status = "🔕 Тихий режим включен - уведомления отключены".to_string();
+                } else {
+                    self.status = "🔔 Уведомления включены".to_string();
+                }
+            }
+        });
+
+        if !self.silent_mode {
+            ui.add_space(5.0);
+            ui.small("💡 Вы будете получать уведомления при:");
+            ui.small("   • Ручной смене DNS");
+            ui.small("   • Автоматическом переключении планировщика");
+            ui.small("   • Завершении теста скорости");
+        }
+
+        ui.add_space(10.0);
+
+        // Автозапуск
+        ui.horizontal(|ui| {
+            ui.label("🚀 Автозапуск:");
+            if ui.checkbox(&mut self.auto_startup_enabled, "Запускать при загрузке Windows").changed() {
+                if self.auto_startup_enabled {
+                    match auto_startup::AutoStartupManager::enable() {
+                        Ok(_) => self.status = "✅ Автозапуск включен".to_string(),
+                        Err(e) => {
+                            self.status = format!("❌ Ошибка включения автозапуска: {}", e);
+                            self.auto_startup_enabled = false;
+                        }
+                    }
+                } else {
+                    match auto_startup::AutoStartupManager::disable() {
+                        Ok(_) => self.status = "⏸️ Автозапуск отключен".to_string(),
+                        Err(e) => self.status = format!("❌ Ошибка отключения автозапуска: {}", e),
+                    }
+                }
+                self.save_settings();
+            }
+        });
+
+        if self.auto_startup_enabled {
+            ui.add_space(5.0);
+            ui.small("💡 DNS Manager будет запускаться при загрузке Windows");
+            ui.small("   и сворачиваться в системный трей");
         }
 
         ui.add_space(10.0);
@@ -1199,6 +1373,11 @@ impl DNSManager {
     }
 
     fn measure_current_ping(&mut self) -> Option<f64> {
+        // Не измеряем пинг в фоновом режиме для экономии ресурсов
+        if self.is_background_mode {
+            return None;
+        }
+
         // Измеряем пинг до первого доступного адаптера
         for adapter in &self.network_adapters {
             if !adapter.gateway.is_empty() {
