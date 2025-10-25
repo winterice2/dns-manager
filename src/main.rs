@@ -39,6 +39,15 @@ struct HistoryEntry {
     dns_after: String,
 }
 
+#[derive(Clone)]
+struct CommandResult {
+    timestamp: String,
+    command: String,
+    success: bool,
+    result: String,
+    error_message: Option<String>,
+}
+
 #[derive(Default)]
 struct DNSManager {
     status: String,
@@ -80,6 +89,9 @@ struct DNSManager {
     scheduler_new_name: String,
     scheduler_new_primary: String,
     scheduler_new_secondary: String,
+
+    // Отслеживание результатов команд
+    command_results: Vec<CommandResult>,
 }
 
 impl DNSManager {
@@ -175,6 +187,10 @@ impl DNSManager {
         scheduler_new_name: "Мой DNS".to_string(),
         scheduler_new_primary: String::new(),
         scheduler_new_secondary: String::new(),
+
+        // Отслеживание результатов команд
+        command_results: Vec::new(),
+
         }
     }
 
@@ -473,6 +489,9 @@ impl eframe::App for DNSManager {
                 if ui.selectable_label(self.selected_tab == 9, "📊 Статистика").clicked() {
                     self.selected_tab = 9;
                 }
+                if ui.selectable_label(self.selected_tab == 10, "🏓 Монитор").clicked() {
+                    self.selected_tab = 10;
+                }
             });
 
             ui.separator();
@@ -488,6 +507,7 @@ impl eframe::App for DNSManager {
                 7 => self.show_settings_tab(ui),
                 8 => self.show_themes_tab(ui),
                 9 => self.show_stats_tab(ui),
+                10 => self.show_monitor_tab(ui),
                 _ => self.show_main_tab(ui, ctx),
             }
         });
@@ -1108,5 +1128,142 @@ impl DNSManager {
         ui.add_space(20.0);
         ui.label("💡 IP адреса должны быть в формате: xxx.xxx.xxx.xxx (например: 8.8.8.8)");
         ui.label("💡 Вторичный DNS можно оставить пустым");
+    }
+
+    // Монитор пинга
+    fn show_monitor_tab(&mut self, ui: &mut egui::Ui) {
+        ui.vertical_centered(|ui| {
+            ui.heading("🏓 Монитор сети");
+        });
+        ui.separator();
+
+        ui.label("📊 Реал-тайм мониторинг сетевых параметров");
+        ui.add_space(15.0);
+
+        // Основная информация о пинге
+        ui.label("🏠 **Пинг до роутера:**");
+        ui.add_space(10.0);
+
+        // Измеряем пинг в реальном времени
+        let current_ping = self.measure_current_ping();
+
+        // Отображаем пинг с цветовой индикацией
+        let (ping_text, ping_color) = match current_ping {
+            Some(p) if p < 30.0 => (format!("🟢 {:.0}ms (отлично)", p), egui::Color32::GREEN),
+            Some(p) if p < 80.0 => (format!("🟡 {:.0}ms (нормально)", p), egui::Color32::YELLOW),
+            Some(p) => (format!("🔴 {:.0}ms (плохо)", p), egui::Color32::RED),
+            None => ("⚪ Нет данных".to_string(), egui::Color32::GRAY),
+        };
+
+        ui.colored_label(ping_color, ping_text);
+
+        ui.add_space(20.0);
+
+        // Легенда
+        ui.label("📋 **Легенда:**");
+        ui.add_space(5.0);
+        ui.small("• 🟢 Зеленый: < 30ms (отлично)");
+        ui.small("• 🟡 Желтый: 30-80ms (нормально)");
+        ui.small("• 🔴 Красный: > 80ms (плохо)");
+        ui.small("• ⚪ Серый: нет данных/ошибка");
+
+        ui.add_space(15.0);
+
+        // Информация об обновлении
+        ui.label("🔄 **Обновление:** каждые 0.5 секунды");
+        ui.add_space(10.0);
+
+        // Кнопка принудительного обновления
+        if ui.button("🔄 Обновить сейчас").clicked() {
+            // Принудительное измерение
+            let _ = self.measure_current_ping();
+        }
+
+        ui.add_space(20.0);
+
+        // Дополнительная информация
+        ui.collapsing("ℹ️ Дополнительная информация", |ui| {
+            ui.label("🌐 **Что измеряется:**");
+            ui.small("• Пинг до шлюза (роутера) вашей сети");
+            ui.small("• Используется первый доступный сетевой адаптер");
+            ui.small("• Измерения производятся локально, без нагрузки на интернет");
+
+            ui.add_space(10.0);
+
+            ui.label("💡 **Для чего это нужно:**");
+            ui.small("• Контроль качества интернет-соединения");
+            ui.small("• Диагностика сетевых проблем");
+            ui.small("• Мониторинг производительности сети");
+            ui.small("• Быстрое обнаружение проблем с подключением");
+        });
+    }
+
+    fn measure_current_ping(&mut self) -> Option<f64> {
+        // Измеряем пинг до первого доступного адаптера
+        for adapter in &self.network_adapters {
+            if !adapter.gateway.is_empty() {
+                let command = format!("ping {}", adapter.gateway);
+                if let Some(ping) = dns::providers::ping_dns_server(&adapter.gateway) {
+                    // Логируем успешный результат
+                    self.log_command_result(
+                        &command,
+                        true,
+                        &format!("{:.1}ms", ping),
+                        None
+                    );
+                    return Some(ping);
+                }
+            }
+        }
+
+        // Если не удалось измерить ни для одного адаптера
+        self.log_command_result(
+            "ping_gateway",
+            false,
+            "no_adapters",
+            Some("Нет доступных адаптеров с шлюзом")
+        );
+
+        None
+    }
+
+    fn check_app_status(&self) -> bool {
+        // Проверяем, запущено ли приложение
+        // В будущем можно добавить более сложную логику
+        true // Пока просто возвращаем true, приложение работает
+    }
+
+    fn log_command_result(&mut self, command: &str, success: bool, result: &str, error: Option<&str>) {
+        use chrono::Local;
+
+        let entry = CommandResult {
+            timestamp: Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
+            command: command.to_string(),
+            success,
+            result: result.to_string(),
+            error_message: error.map(|e| e.to_string()),
+        };
+
+        self.command_results.push(entry);
+
+        // Ограничиваем историю результатов (последние 50)
+        if self.command_results.len() > 50 {
+            self.command_results.remove(0);
+        }
+
+        // Логируем в консоль только в debug режиме
+        #[cfg(debug_assertions)]
+        {
+            let status = if success { "✅ SUCCESS" } else { "❌ FAILED" };
+            println!("{} Command: {} | Result: {}", status, command, result);
+
+            if let Some(err) = error {
+                println!("   Error: {}", err);
+            }
+        }
+    }
+
+    fn get_last_command_status(&self) -> Option<&CommandResult> {
+        self.command_results.last()
     }
 }

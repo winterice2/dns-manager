@@ -118,12 +118,14 @@ pub fn ping_dns_server(ip: &str) -> Option<f64> {
     match run_powershell_command(&command1) {
         Ok(result) => {
             if let Ok(ms) = result.trim().parse::<f64>() {
+                #[cfg(debug_assertions)]
                 println_cp866(&format!("PowerShell Test-Connection ping to {}: {:.1}ms", ip, ms));
                 return Some(ms);
             }
         }
         Err(_) => {
             // Если Test-Connection не работает, пробуем ping.exe
+            #[cfg(debug_assertions)]
             println_cp866(&format!("Test-Connection failed for {}, trying ping.exe", ip));
         }
     }
@@ -136,6 +138,7 @@ pub fn ping_dns_server(ip: &str) -> Option<f64> {
             if let Some(time_part) = result.split("time=").nth(1) {
                 if let Some(ms_str) = time_part.split("ms").next() {
                     if let Ok(ms) = ms_str.trim().parse::<f64>() {
+                        #[cfg(debug_assertions)]
                         println_cp866(&format!("ping.exe ping to {}: {:.1}ms", ip, ms));
                         return Some(ms);
                     }
@@ -169,6 +172,7 @@ pub fn ping_dns_server(ip: &str) -> Option<f64> {
                     if let Ok(ms) = number_str.parse::<f64>() {
                         // Проверяем что это разумное значение пинга (1-10000мс)
                         if ms >= 1.0 && ms < 10000.0 {
+                            #[cfg(debug_assertions)]
                             println_cp866(&format!("ping.exe ping to {}: {:.1}ms (time parser)", ip, ms));
                             return Some(ms);
                         }
@@ -183,6 +187,7 @@ pub fn ping_dns_server(ip: &str) -> Option<f64> {
                     let number_str = &after_marker[..end_pos];
                     if let Ok(ms) = number_str.parse::<f64>() {
                         if ms >= 1.0 && ms < 10000.0 {
+                            #[cfg(debug_assertions)]
                             println_cp866(&format!("ping.exe ping to {}: {:.1}ms (CP866 marker)", ip, ms));
                             return Some(ms);
                         }
@@ -190,9 +195,11 @@ pub fn ping_dns_server(ip: &str) -> Option<f64> {
                 }
             }
 
+            #[cfg(debug_assertions)]
             println_cp866(&format!("Failed to parse ping.exe result for {}: {}", ip, result));
         }
         Err(e) => {
+            #[cfg(debug_assertions)]
             println_cp866(&format!("ping.exe ping to {} failed: {}", ip, e));
         }
     }
