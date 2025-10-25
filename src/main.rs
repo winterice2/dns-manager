@@ -492,7 +492,7 @@ impl DNSManager {
 }
 
 impl eframe::App for DNSManager {
-    fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
+    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         // Применяем текущую тему
         self.apply_theme(ctx);
 

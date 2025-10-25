@@ -200,7 +200,7 @@ pub fn ping_dns_server(ip: &str) -> Option<f64> {
         }
         Err(_e) => {
             #[cfg(debug_assertions)]
-            println_cp866(&format!("ping.exe ping to {} failed: {}", ip, e));
+            println_cp866(&format!("ping.exe ping to {} failed: {}", ip, _e));
         }
     }
 
