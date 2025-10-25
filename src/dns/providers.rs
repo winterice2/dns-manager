@@ -198,7 +198,7 @@ pub fn ping_dns_server(ip: &str) -> Option<f64> {
             #[cfg(debug_assertions)]
             println_cp866(&format!("Failed to parse ping.exe result for {}: {}", ip, result));
         }
-        Err(e) => {
+        Err(_e) => {
             #[cfg(debug_assertions)]
             println_cp866(&format!("ping.exe ping to {} failed: {}", ip, e));
         }

@@ -86,13 +86,18 @@ impl TrayManager {
         let hide_sender = event_sender.clone();
         let quit_sender = event_sender;
 
+        // Захватываем ID элементов меню (thread-safe)
+        let show_id = show_item.id().clone();
+        let hide_id = hide_item.id().clone();
+        let quit_id = quit_item.id().clone();
+
         // Обработчики событий меню
-        MenuEvent::set_event_handler(Some(move |event| {
-            if event.id == show_item.id() {
+        MenuEvent::set_event_handler(Some(move |event: tray_icon::menu::MenuEvent| {
+            if event.id == show_id {
                 let _ = show_sender.send(TrayEvent::Show);
-            } else if event.id == hide_item.id() {
+            } else if event.id == hide_id {
                 let _ = hide_sender.send(TrayEvent::Hide);
-            } else if event.id == quit_item.id() {
+            } else if event.id == quit_id {
                 let _ = quit_sender.send(TrayEvent::Quit);
             }
         }));
