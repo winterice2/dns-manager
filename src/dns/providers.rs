@@ -1,6 +1,8 @@
 // Модуль для DNS провайдеров
 
 use std::collections::HashSet;
+use crate::error::{DnsError, DnsResult};
+use crate::validation::{validate_dns_pair, sanitize_powershell_arg};
 
 #[derive(Clone)]
 pub struct DNSProvider {
@@ -60,22 +62,28 @@ pub fn get_dns_providers() -> Vec<DNSProvider> {
 }
 
 pub fn ping_dns_server(ip: &str) -> Option<f64> {
-    // Используем PowerShell для измерения задержки через Test-Connection
-    let command = format!("Test-Connection -ComputerName {} -Count 1 | Select-Object -ExpandProperty ResponseTime", ip);
+    // SECURITY: Validate IP address first
+    if crate::validation::validate_ip_address(ip).is_err() {
+        eprintln!("Invalid IP address for ping: {}", ip);
+        return None;
+    }
+    
+    let safe_ip = sanitize_powershell_arg(ip);
+    let command = format!("Test-Connection -ComputerName {} -Count 1 | Select-Object -ExpandProperty ResponseTime", safe_ip);
 
     match run_powershell_command(&command) {
         Ok(result) => {
             // Парсим результат
             if let Ok(ms) = result.trim().parse::<f64>() {
-                println!("PowerShell ping to {}: {:.1}ms", ip, ms);
+                println!("PowerShell ping to {}: {:.1}ms", safe_ip, ms);
                 Some(ms)
             } else {
-                println!("Failed to parse PowerShell ping result for {}: {}", ip, result);
+                eprintln!("Failed to parse PowerShell ping result for {}: {}", safe_ip, result);
                 None
             }
         }
         Err(e) => {
-            println!("PowerShell ping to {} failed: {}", ip, e);
+            eprintln!("PowerShell ping to {} failed: {}", safe_ip, e);
             None
         }
     }
@@ -147,12 +155,20 @@ pub fn get_current_dns() -> Result<String, String> {
 }
 
 pub fn set_dns(primary: &str, secondary: &str) -> Result<String, String> {
+    // SECURITY: Validate IPs to prevent command injection
+    let (validated_primary, validated_secondary) = validate_dns_pair(primary, secondary)
+        .map_err(|e| e.to_string())?;
+    
+    // SECURITY: Additional sanitization
+    let safe_primary = sanitize_powershell_arg(&validated_primary);
+    let safe_secondary = sanitize_powershell_arg(&validated_secondary);
+    
     // Получаем список активных сетевых адаптеров и устанавливаем DNS для всех
     let command = format!(
         r#"Get-NetAdapter | Where-Object {{ $_.Status -eq 'Up' }} | ForEach-Object {{
     Set-DnsClientServerAddress -InterfaceAlias $_.Name -ServerAddresses ('{0}','{1}')
 }}"#,
-        primary, secondary
+        safe_primary, safe_secondary
     );
     run_powershell_command(&command)
 }
@@ -175,12 +191,25 @@ fn is_dhcp_dns(addresses: &str) -> bool {
 
 fn run_powershell_command(command: &str) -> Result<String, String> {
     use std::process::Command;
+    use std::time::Duration;
+    
+    // SECURITY: Use environment variable instead of hardcoded path
+    let powershell_path = std::env::var("SystemRoot")
+        .unwrap_or_else(|_| "C:\\Windows".to_string()) + "\\System32\\WindowsPowerShell\\v1.0\\powershell.exe";
 
-    let output = Command::new(r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe")
+    let output = Command::new(&powershell_path)
+        .arg("-NoProfile") // SECURITY: Don't load user profile
+        .arg("-NonInteractive") // SECURITY: No interactive prompts
         .arg("-Command")
         .arg(command)
         .output()
-        .map_err(|e| format!("Failed to execute command: {}", e))?;
+        .map_err(|e| {
+            if e.kind() == std::io::ErrorKind::PermissionDenied {
+                "Permission denied. Please run as administrator.".to_string()
+            } else {
+                format!("Failed to execute command: {}", e)
+            }
+        })?;
 
     let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
     let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
@@ -188,18 +217,33 @@ fn run_powershell_command(command: &str) -> Result<String, String> {
     if output.status.success() {
         Ok(stdout)
     } else {
-        Err(stderr)
+        // SECURITY: Don't expose full stderr to prevent info leakage
+        if stderr.contains("Access is denied") {
+            Err("Access denied. Administrator rights required.".to_string())
+        } else {
+            Err("Command execution failed".to_string())
+        }
     }
 }
 
 fn run_cmd_command(command: &str) -> Result<String, String> {
     use std::process::Command;
+    
+    // SECURITY: Use environment variable instead of hardcoded path
+    let cmd_path = std::env::var("SystemRoot")
+        .unwrap_or_else(|_| "C:\\Windows".to_string()) + "\\System32\\cmd.exe";
 
-    let output = Command::new(r"C:\Windows\System32\cmd.exe")
+    let output = Command::new(&cmd_path)
         .arg("/C")
         .arg(command)
         .output()
-        .map_err(|e| format!("Failed to execute command: {}", e))?;
+        .map_err(|e| {
+            if e.kind() == std::io::ErrorKind::PermissionDenied {
+                "Permission denied. Please run as administrator.".to_string()
+            } else {
+                format!("Failed to execute command: {}", e)
+            }
+        })?;
 
     let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
     let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
@@ -207,6 +251,6 @@ fn run_cmd_command(command: &str) -> Result<String, String> {
     if output.status.success() {
         Ok(stdout)
     } else {
-        Err(stderr)
+        Err("Command execution failed".to_string())
     }
 }
