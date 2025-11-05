@@ -146,14 +146,15 @@ pub fn show_main_tab(app: &mut DNSManager, ui: &mut Ui, ctx: &Context) {
         ui.label("⚗️ Инструменты анализа и тестирования:");
         ui.add_space(10.0);
 
-        // DNS Speed Test
-        let button_text = if app.is_speed_testing {
+        // DNS Speed Test - PERFORMANCE: Now non-blocking
+        let is_running = app.is_speed_test_running();
+        let button_text = if is_running {
             "⏳ Тестирование выполняется...".to_string()
         } else {
             "⚡ DNS Speed Test - Тестировать все провайдеры".to_string()
         };
 
-        if ui.add_sized([ui.available_width(), 40.0], egui::Button::new(button_text)).clicked() && !app.is_speed_testing {
+        if ui.add_sized([ui.available_width(), 40.0], egui::Button::new(button_text)).clicked() && !is_running {
             app.start_speed_test();
             ctx.request_repaint();
         }

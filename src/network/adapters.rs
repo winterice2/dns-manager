@@ -1,14 +1,30 @@
 // Модуль для работы с сетевыми адаптерами
 
-use serde_json;
+use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Default)]
+/// Network adapter information
+#[derive(Clone, Default, Debug)]
 pub struct NetworkAdapter {
     pub name: String,
     pub status: String,
     pub mac_address: String,
     pub ip_addresses: Vec<String>,
     pub dns_servers: Vec<String>,
+}
+
+/// Typed structure for PowerShell JSON output
+#[derive(Debug, Deserialize)]
+struct AdapterJson {
+    #[serde(rename = "Name")]
+    name: String,
+    #[serde(rename = "Status")]
+    status: String,
+    #[serde(rename = "MacAddress")]
+    mac_address: String,
+    #[serde(rename = "IPAddress")]
+    ip_address: String,
+    #[serde(rename = "DNSServers")]
+    dns_servers: String,
 }
 
 pub fn get_network_adapters() -> Vec<NetworkAdapter> {
@@ -28,94 +44,122 @@ pub fn get_network_adapters() -> Vec<NetworkAdapter> {
 
     match run_powershell_command(command) {
         Ok(json_result) => {
-            // Парсим JSON результат
-            match serde_json::from_str::<Vec<serde_json::Value>>(&json_result) {
+            // PERFORMANCE: Use typed deserialization instead of Value
+            // Handle both single object and array of objects
+            let adapters_json: Result<Vec<AdapterJson>, _> = serde_json::from_str(&json_result)
+                .or_else(|_| {
+                    // Try parsing as single object
+                    serde_json::from_str::<AdapterJson>(&json_result)
+                        .map(|single| vec![single])
+                });
+
+            match adapters_json {
                 Ok(adapters_json) => {
-                    let mut adapters = Vec::new();
-                    for adapter_json in adapters_json {
-                        if let (Some(name), Some(status), Some(mac), Some(ip), Some(dns)) = (
-                            adapter_json.get("Name").and_then(|v| v.as_str()),
-                            adapter_json.get("Status").and_then(|v| v.as_str()),
-                            adapter_json.get("MacAddress").and_then(|v| v.as_str()),
-                            adapter_json.get("IPAddress").and_then(|v| v.as_str()),
-                            adapter_json.get("DNSServers").and_then(|v| v.as_str()),
-                        ) {
-                            let ip_addresses = if ip != "N/A" {
-                                vec![ip.to_string()]
+                    adapters_json
+                        .into_iter()
+                        .map(|adapter_json| {
+                            let ip_addresses = if adapter_json.ip_address != "N/A" {
+                                vec![adapter_json.ip_address]
                             } else {
                                 vec!["Не назначен".to_string()]
                             };
 
-                            let dns_servers = if dns != "N/A" {
-                                dns.split(", ").map(|s| s.to_string()).collect()
+                            let dns_servers = if adapter_json.dns_servers != "N/A" {
+                                adapter_json.dns_servers
+                                    .split(", ")
+                                    .map(|s| s.to_string())
+                                    .collect()
                             } else {
                                 vec!["Не настроен".to_string()]
                             };
 
-                            adapters.push(NetworkAdapter {
-                                name: name.to_string(),
-                                status: status.to_string(),
-                                mac_address: mac.to_string(),
+                            NetworkAdapter {
+                                name: adapter_json.name,
+                                status: adapter_json.status,
+                                mac_address: adapter_json.mac_address,
                                 ip_addresses,
                                 dns_servers,
-                            });
-                        }
-                    }
-                    adapters
+                            }
+                        })
+                        .collect()
                 }
-                Err(_) => vec![NetworkAdapter {
-                    name: "Ошибка получения данных".to_string(),
-                    status: "N/A".to_string(),
-                    mac_address: "N/A".to_string(),
-                    ip_addresses: vec!["N/A".to_string()],
-                    dns_servers: vec!["N/A".to_string()],
-                }],
+                Err(e) => {
+                    eprintln!("Failed to parse adapter JSON: {}", e);
+                    vec![NetworkAdapter {
+                        name: "Ошибка парсинга".to_string(),
+                        status: "N/A".to_string(),
+                        mac_address: "N/A".to_string(),
+                        ip_addresses: vec!["N/A".to_string()],
+                        dns_servers: vec!["N/A".to_string()],
+                    }]
+                }
             }
         }
-        Err(_) => vec![NetworkAdapter {
-            name: "Ошибка выполнения команды".to_string(),
-            status: "N/A".to_string(),
-            mac_address: "N/A".to_string(),
-            ip_addresses: vec!["N/A".to_string()],
-            dns_servers: vec!["N/A".to_string()],
-        }],
+        Err(e) => {
+            eprintln!("Failed to execute PowerShell command: {}", e);
+            vec![NetworkAdapter {
+                name: "Ошибка выполнения команды".to_string(),
+                status: "N/A".to_string(),
+                mac_address: "N/A".to_string(),
+                ip_addresses: vec!["N/A".to_string()],
+                dns_servers: vec!["N/A".to_string()],
+            }]
+        }
     }
 }
 
 fn run_powershell_command(command: &str) -> Result<String, String> {
     use std::process::Command;
+    
+    // SECURITY: Use environment variable instead of hardcoded path
+    let system_root = std::env::var("SystemRoot")
+        .unwrap_or_else(|_| "C:\\Windows".to_string());
 
     // Если команда содержит ipconfig или netsh - используем cmd с полным путем
     if command.contains("ipconfig") || command.contains("netsh") {
-        let output = Command::new(r"C:\Windows\System32\cmd.exe")
+        let cmd_path = format!("{}\\System32\\cmd.exe", system_root);
+        let output = Command::new(&cmd_path)
             .arg("/C")
             .arg(command)
             .output()
-            .map_err(|e| format!("Failed to execute command: {}", e))?;
+            .map_err(|e| {
+                if e.kind() == std::io::ErrorKind::PermissionDenied {
+                    "Permission denied. Please run as administrator.".to_string()
+                } else {
+                    format!("Failed to execute command: {}", e)
+                }
+            })?;
 
         let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
 
         if output.status.success() {
             Ok(stdout)
         } else {
-            Err(stderr)
+            Err("Command execution failed".to_string())
         }
     } else {
         // Для PowerShell команд используем PowerShell
-        let output = Command::new(r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe")
+        let ps_path = format!("{}\\System32\\WindowsPowerShell\\v1.0\\powershell.exe", system_root);
+        let output = Command::new(&ps_path)
+            .arg("-NoProfile") // SECURITY: Don't load user profile
+            .arg("-NonInteractive") // SECURITY: No interactive prompts
             .arg("-Command")
             .arg(command)
             .output()
-            .map_err(|e| format!("Failed to execute command: {}", e))?;
+            .map_err(|e| {
+                if e.kind() == std::io::ErrorKind::PermissionDenied {
+                    "Permission denied. Please run as administrator.".to_string()
+                } else {
+                    format!("Failed to execute command: {}", e)
+                }
+            })?;
 
         let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
 
         if output.status.success() {
             Ok(stdout)
         } else {
-            Err(stderr)
+            Err("Command execution failed".to_string())
         }
     }
 }

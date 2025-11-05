@@ -2,6 +2,9 @@
 mod ui;
 mod network;
 mod dns;
+mod error;
+mod validation;
+mod executor;
 
 fn main() -> Result<(), eframe::Error> {
     let options = eframe::NativeOptions {
@@ -19,19 +22,37 @@ fn main() -> Result<(), eframe::Error> {
 }
 
 // Импортируем типы из модулей
-use dns::providers::{DNSProvider, SpeedTestResult};
+use dns::providers::DNSProvider;
 use network::adapters::NetworkAdapter;
+use executor::{AsyncExecutor, AsyncSpeedTestResult, SpeedTestState};
 
-#[derive(Default)]
+/// Main application state
+/// ARCHITECTURE: Separated concerns - this struct only holds UI state
 struct DNSManager {
     status: String,
     current_dns: String,
-    speed_results: Vec<SpeedTestResult>,
+    speed_results: Vec<AsyncSpeedTestResult>,
     custom_primary: String,
     custom_secondary: String,
     selected_tab: usize,
-    is_speed_testing: bool,
     network_adapters: Vec<NetworkAdapter>,
+    // PERFORMANCE: Async executor for non-blocking operations
+    executor: AsyncExecutor,
+}
+
+impl Default for DNSManager {
+    fn default() -> Self {
+        Self {
+            status: "🚀 Ready for space launch!".to_string(),
+            current_dns: String::new(),
+            speed_results: Vec::new(),
+            custom_primary: String::new(),
+            custom_secondary: String::new(),
+            selected_tab: 0,
+            network_adapters: Vec::new(),
+            executor: AsyncExecutor::new(),
+        }
+    }
 }
 
 impl DNSManager {
@@ -69,14 +90,8 @@ impl DNSManager {
         let network_adapters = network::adapters::get_network_adapters();
 
         Self {
-            status: "🚀 Ready for space launch!".to_string(),
-            current_dns: String::new(),
-            speed_results: Vec::new(),
-            custom_primary: String::new(),
-            custom_secondary: String::new(),
-            selected_tab: 0,
-            is_speed_testing: false,
             network_adapters,
+            ..Default::default()
         }
     }
 
@@ -107,75 +122,48 @@ impl DNSManager {
         network::adapters::get_network_adapters()
     }
 
+    // PERFORMANCE: Speed test now runs in background thread via AsyncExecutor
     fn start_speed_test(&mut self) {
-        if !self.is_speed_testing {
-            self.is_speed_testing = true;
-            self.status = "🧪 Запуск тестирования скорости DNS...".to_string();
-            self.speed_results.clear();
+        self.status = "🧪 Запуск тестирования скорости DNS...".to_string();
+        self.speed_results.clear();
+        let providers = Self::get_dns_providers();
+        self.executor.start_speed_test(providers);
+    }
+
+    // PERFORMANCE: Non-blocking check of speed test state
+    fn update_speed_test_ui(&mut self) {
+        match self.executor.get_speed_test_state() {
+            SpeedTestState::Idle => {},
+            SpeedTestState::Running { progress, total } => {
+                self.status = format!("🧪 Тестирование... ({}/{})", progress, total);
+            },
+            SpeedTestState::Completed(results) => {
+                self.speed_results = results;
+                self.status = format!("✅ Тестирование завершено! Получено {} результатов.", self.speed_results.len());
+                self.executor.reset_speed_test();
+            },
+            SpeedTestState::Failed(err) => {
+                self.status = format!("❌ Ошибка тестирования: {}", err);
+                self.executor.reset_speed_test();
+            },
         }
     }
 
-    fn update_speed_test(&mut self) -> bool {
-        if !self.is_speed_testing {
-            return false;
-        }
-
-        let providers = Self::get_dns_providers();
-        let current_count = self.speed_results.len();
-
-        if current_count < providers.len() {
-            // Тестируем следующий провайдер
-            let provider = &providers[current_count];
-            self.status = format!("🧪 Тестирование {}... ({}/{})", provider.name, current_count + 1, providers.len());
-
-            let primary_ping = Self::ping_dns_server(&provider.primary);
-            let secondary_ping = Self::ping_dns_server(&provider.secondary);
-
-            let mut result = SpeedTestResult {
-                provider: provider.name.clone(),
-                primary_ping,
-                secondary_ping,
-                avg_ping: None,
-            };
-
-            // Вычисляем среднее значение
-            let mut pings = Vec::new();
-            if let Some(p) = result.primary_ping { pings.push(p); }
-            if let Some(p) = result.secondary_ping { pings.push(p); }
-
-            if !pings.is_empty() {
-                result.avg_ping = Some(pings.iter().sum::<f64>() / pings.len() as f64);
-            }
-
-            self.speed_results.push(result);
-            return false; // Продолжаем тестирование
-        } else {
-            // Тестирование завершено
-            self.is_speed_testing = false;
-
-            // Сортируем по средней задержке
-            self.speed_results.sort_by(|a, b| {
-                match (a.avg_ping, b.avg_ping) {
-                    (Some(a_ping), Some(b_ping)) => a_ping.partial_cmp(&b_ping).unwrap_or(std::cmp::Ordering::Equal),
-                    (Some(_), None) => std::cmp::Ordering::Less,
-                    (None, Some(_)) => std::cmp::Ordering::Greater,
-                    (None, None) => std::cmp::Ordering::Equal,
-                }
-            });
-
-            self.status = format!("✅ Тестирование завершено! Получено {} результатов.", self.speed_results.len());
-            return true; // Тестирование завершено
-        }
+    // Helper to check if speed test is running
+    fn is_speed_test_running(&self) -> bool {
+        !matches!(self.executor.get_speed_test_state(), SpeedTestState::Idle)
     }
 
 }
 
 impl eframe::App for DNSManager {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        // Обновляем тестирование скорости, если оно активно
-        if self.is_speed_testing {
-            self.update_speed_test();
-            ctx.request_repaint(); // Запрашиваем перерисовку для обновления UI
+        // PERFORMANCE: Non-blocking update of speed test UI
+        self.update_speed_test_ui();
+        
+        // PERFORMANCE: Only request repaint if speed test is running
+        if !matches!(self.executor.get_speed_test_state(), SpeedTestState::Idle) {
+            ctx.request_repaint();
         }
 
         egui::CentralPanel::default().show(ctx, |ui| {
